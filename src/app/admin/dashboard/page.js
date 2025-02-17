@@ -93,12 +93,12 @@ const Dashboard = () => {
       path: '/admin/appointments',
       icon: <FaCalendarAlt size={40} color="#0d6efd" />
     },
-    { 
-      title: 'Inventory Dashboard', 
-      path: '/admin/inventrydashboard',
-      icon: <FaBoxOpen size={40} color="#0d6efd" />,
-      count: null
-    },
+  //  { 
+  //    title: 'Inventory Dashboard', 
+  //    path: '/admin/inventrydashboard',
+   //   icon: <FaBoxOpen size={40} color="#0d6efd" />,
+  //    count: null
+ //   },
     { 
       title: 'Doctor Report', 
       path: '/admin/doctorreport',
