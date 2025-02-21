@@ -3,7 +3,7 @@ import Footer from "@/components/Footer";
 import ScrollTop from "@/components/ScrollTop";
 import Preloader from "@/components/Preloader";
 import { Poppins } from "next/font/google";
-import EmotionalMessagePopup from "@/components/EmotionalMessagePopup";
+import ConditionalEmotionalMessagePopup from "@/components/ConditionalEmotionalMessagePopup";
 
 // Bootstrap CSS
 import "../../public/css/bootstrap.min.css";
@@ -43,7 +43,8 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={poppins.className}>
         <Preloader />
-        <EmotionalMessagePopup />
+        {/* Conditionally render the Emotional Message Popup */}
+        <ConditionalEmotionalMessagePopup />
         {children}
         <Footer />
         <ScrollTop />
