@@ -59,7 +59,6 @@ const AdminDashboard = () => {
         {[
           { title: "Book Appointment", icon: faBookOpen, link: "/admin/directbooking", color: "primary" },
           { title: "Online Appointments", icon: faCheckCircle, link: "/admin/onlinebooking", color: "success" },
-      
           { title: "Today Appointments", icon: faCalendarDay, link: "/admin/todayattend", color: "info" },
           { title: "User History", icon: faHistory, link: "/admin/userhistory", color: "dark" },
           { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
