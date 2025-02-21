@@ -1,243 +1,133 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { getDatabase, ref, set, push, get } from "firebase/database";
-import { app } from '@/lib/firebaseConfig';
+import { getDatabase, ref, push } from "firebase/database";
+import { app } from "@/lib/firebaseConfig";
 import Breadcrumbs from "@/components/Breadcrumbs";
-import WorkHour from "./WorkHour";  // Import the WorkHour component
 import Header from "@/components/Header/Header";
 import Popup from "@/components/Popup";
+import Select from "react-select";
 
-const DateInput = ({ selectedDate, onDateChange }) => {
-  return (
-    <input
-      type="date"
-      name="date"
-      value={selectedDate}
-      onChange={onDateChange}
-      required
-    />
-  );
-};
+const physiotherapyServices = [
+  { icon: "icofont-physiotherapist", title: "Neuro Physiotherapy", desc: "Specialized physiotherapy for neurological conditions, helping you recover and manage symptoms." },
+  { icon: "icofont-physiotherapist", title: "Cardiorespiratory Physiotherapy", desc: "Treatment for respiratory and cardiovascular conditions to improve breathing and heart function." },
+  { icon: "icofont-physiotherapist", title: "Sports Therapy", desc: "Therapy to enhance athletic performance and aid in faster recovery from sports injuries." },
+  { icon: "icofont-physiotherapist", title: "Speech Therapy", desc: "Therapy designed to address speech and language disorders, improving communication skills." },
+  { icon: "icofont-physiotherapist", title: "Paediatric Physiotherapy", desc: "Specialized care focusing on children's physical development and needs." },
+  { icon: "icofont-physiotherapist", title: "Orthopaedic Physiotherapy", desc: "Rehabilitation for musculoskeletal injuries, helping you regain strength and mobility." },
+  { icon: "icofont-physiotherapist", title: "Post-Op Physiotherapy", desc: "Rehabilitation services following surgery to ensure a smooth and speedy recovery." },
+  { icon: "icofont-physiotherapist", title: "Geriatric Physiotherapy", desc: "Physiotherapy focused on improving mobility and quality of life for older adults." },
+  { icon: "icofont-physiotherapist", title: "Maternal Physiotherapy", desc: "Comprehensive care for pregnant and postpartum women, promoting recovery and health." },
+];
+
+const wellnessServices = [
+  { icon: "icofont-massage", title: "Massage Therapy", desc: "Experience relaxing and therapeutic massages to relieve stress and promote wellness." },
+  { icon: "icofont-yoga", title: "Yoga", desc: "Join guided yoga sessions for physical and mental well-being, tailored for all skill levels." },
+  { icon: "icofont-acupuncture", title: "Acupuncture", desc: "Traditional therapy using acupuncture for pain relief, improved circulation, and healing." },
+  { icon: "icofont-nutrition", title: "Clinical Nutrition Counselling", desc: "Get personalized nutrition plans to enhance your health and well-being." },
+  { icon: "icofont-vr", title: "VR Therapy", desc: "Innovative virtual reality therapy to help with anxiety, phobias, and mental health." },
+  { icon: "icofont-sensory", title: "Sensory Desensitization", desc: "Specialized therapy designed to reduce sensitivity to various stimuli." },
+  { icon: "icofont-rehab", title: "De-addiction Programs", desc: "Get support through structured programs to overcome addiction and lead a healthier life." },
+  { icon: "icofont-hijama", title: "Hijama Therapy", desc: "Cupping therapy for detoxification, improved circulation, and pain relief." },
+  { icon: "icofont-chiropractic", title: "Chiropractic Services", desc: "Manual therapy to promote spinal health and joint mobility." },
+];
+
+const serviceOptions = [
+  {
+    label: "Physiotherapy Services",
+    options: physiotherapyServices.map(service => ({
+      value: service.title,
+      label: service.title,
+    })),
+  },
+  {
+    label: "Wellness Services",
+    options: wellnessServices.map(service => ({
+      value: service.title,
+      label: service.title,
+    })),
+  },
+];
 
 export default function Appointment() {
   const router = useRouter();
-  const auth = getAuth(app);
   const db = getDatabase(app);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userDetails, setUserDetails] = useState({
     name: "",
-    email: "",
     phone: "",
-    treatment: "",
-    subService: "",
-    doctor: "",
-    appointmentDate: "",
-    appointmentTime: "",
     message: "",
+    service: null,
+    coupon: ""
   });
-
   const [showPopup, setShowPopup] = useState(false);
   const [popupMessage, setPopupMessage] = useState("");
-  const [doctors, setDoctors] = useState([]);
-  const [filteredDoctors, setFilteredDoctors] = useState([]);
 
-  // Define sub-services
-  const subServices = {
-    Physiotherapy: [
-      "Neuro Physiotherapy",
-      "Cardiorespiratory Physiotherapy",
-      "Sports Therapy",
-      "Speech Therapy",
-      "Paediatric Physiotherapy",
-      "Orthopaedic Physiotherapy",
-      "Post-Op Physiotherapy",
-      "Geriatric Physiotherapy",
-      "Maternal Physiotherapy",
-    ],
-    "Wellness Center": [
-      "Massage Therapy",
-      "Yoga",
-      "Acupuncture",
-      "Clinical Nutrition Counselling",
-      "VR Therapy",
-      "Sensory Desensitization",
-      "De-addiction Programs",
-      "Hijama Therapy",
-      "Chiropractic Services",
-      "Dermatologist"
-    ],
-  };
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        router.push("/login");
-      } else {
-        setIsLoggedIn(true);
-        fetchUserDetails(user.uid);
-      }
-    });
-
-    fetchDoctors();
-
-    const params = new URLSearchParams(window.location.search);
-    const uid = params.get('uid'); // Extract UID from URL
-    if (uid) {
-      fetchDoctorById(uid);
-    }
-
-    const currentDate = new Date();
-    const nextDate = new Date(currentDate);
-    nextDate.setDate(currentDate.getDate() + 1);
-    const formattedNextDate = nextDate.toISOString().split("T")[0];
-    const currentHours = String(currentDate.getHours()).padStart(2, '0');
-    const currentMinutes = String(currentDate.getMinutes()).padStart(2, '0');
-    const currentTime = `${currentHours}:${currentMinutes}`;
-
-    setUserDetails((prevDetails) => ({
-      ...prevDetails,
-      appointmentDate: formattedNextDate,
-      appointmentTime: currentTime,
-    }));
-
-    return () => unsubscribe();
-  }, [auth, router]);
-
-  const fetchUserDetails = async (uid) => {
-    try {
-      const userRef = ref(db, `users/${uid}`);
-      const snapshot = await get(userRef);
-      if (snapshot.exists()) {
-        setUserDetails(snapshot.val());
-      }
-    } catch (error) {
-      console.error("Error fetching user details:", error);
-    }
-  };
-
-  const fetchDoctors = async () => {
-    try {
-      const doctorsRef = ref(db, 'doctors');
-      const snapshot = await get(doctorsRef);
-      if (snapshot.exists()) {
-        const allDoctors = snapshot.val();
-        // Convert to an array of objects including the uid
-        setDoctors(Object.entries(allDoctors).map(([uid, data]) => ({ uid, ...data })));
-        setFilteredDoctors(Object.entries(allDoctors).map(([uid, data]) => ({ uid, ...data })));
-      }
-    } catch (error) {
-      console.error("Error fetching doctors:", error);
-    }
-  };
-  
-
-  const fetchDoctorById = async (uid) => {
-    try {
-      const doctorRef = ref(db, `doctors/${uid}`);
-      const snapshot = await get(doctorRef);
-      if (snapshot.exists()) {
-        const doctor = snapshot.val();
-        setUserDetails(prevDetails => ({
-          ...prevDetails,
-          treatment: doctor.role,
-          doctor: doctor.name,
-        }));
-        handleTreatmentChange({ target: { value: doctor.role } });
-      }
-    } catch (error) {
-      console.error("Error fetching doctor details:", error);
-    }
-  };
   const handleSubmit = async (event) => {
     event.preventDefault();
-    
-    const formData = new FormData(event.target);
-    const treatmentPrices = {
-      "Physiotherapy": 200,
-      "Wellness Center": 400,
-    };
-    
-    const currentDate = new Date();
-    const formattedSubmissionDate = currentDate.toLocaleDateString("en-GB", {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-    
-    const time = formData.get("time");
-    const [hour, minute] = time.split(":");
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const formattedSubmissionTime = `${(hour % 12 || 12)}:${minute} ${ampm}`;
-    
-    const appointmentData = {
-      uid: auth.currentUser.uid,
-      name: formData.get("name"),
-      email: formData.get("email"),
-      phone: formData.get("phone"),
-      treatment: formData.get("treatment"),
-      subService: formData.get("subService"),
-      doctor: formData.get("doctor"), // This should now be the doctor's UID
-      appointmentDate: formData.get("date"),
-      appointmentTime: formattedSubmissionTime,
-      message: formData.get("message"),
-      price: treatmentPrices[formData.get("treatment")],
-      approved: false,
-      submissionDate: formattedSubmissionDate,
-      submissionTime: formattedSubmissionTime,
-    };
-  
-    const user = auth.currentUser;
-  
-    if (user) {
-      try {
-        await set(ref(db, `users/${user.uid}`), {
-          name: appointmentData.name,
-          phone: appointmentData.phone,
-          email: appointmentData.email,
-          uid: user.uid,
-        });
-  
-        await push(ref(db, `appointments/${user.uid}`), appointmentData);
-        setPopupMessage(`Dear ${userDetails.name}, your appointment booking has been successfully sent to ${appointmentData.doctor}. Please wait for approval.`);
-        setShowPopup(true);
-      } catch (error) {
-        console.error("Error saving appointment:", error);
-        alert("Failed to book appointment. Please try again.");
-      }
-    }
-  };
-  
-  const handleTreatmentChange = (e) => {
-    const selectedTreatment = e.target.value;
-    const selectedDoctors = Object.values(doctors).filter(doctor => doctor.role === selectedTreatment);
-  
-    setFilteredDoctors(selectedDoctors);
-    
-    // Set the default doctor to the first doctor in the filtered list, if any
-    const defaultDoctor = selectedDoctors.length > 0 ? selectedDoctors[0].name : "";
-    
-    setUserDetails({
-      ...userDetails,
-      treatment: selectedTreatment,
-      subService: "",
-      doctor: defaultDoctor,
-    });
-  };
-  
-  const handleSubServiceChange = (e) => {
-    setUserDetails({
-      ...userDetails,
-      subService: e.target.value,
-    });
-  };
 
-  const handleDoctorChange = (e) => {
-    setUserDetails({
-      ...userDetails,
-      doctor: e.target.value,
-    });
+    // Validate phone: ensure it's exactly 10 digits
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(userDetails.phone)) {
+      alert("Please enter a valid 10-digit phone number.");
+      return;
+    }
+
+    // Restrict submission to 3 appointments per day
+    const today = new Date().toISOString().split("T")[0];
+    const countKey = `appointments_${today}`;
+    const appointmentCount = localStorage.getItem(countKey);
+    if (appointmentCount && parseInt(appointmentCount) >= 3) {
+      alert("You have reached the maximum appointment booking limit for today.");
+      return;
+    }
+
+    const submissionDate = new Date().toLocaleDateString("en-GB"); // e.g. "21/02/2025"
+    const submissionTime = new Date().toLocaleTimeString("en-US");  // e.g. "2:48:40 PM"
+
+    const appointmentData = {
+      name: userDetails.name,
+      phone: userDetails.phone,
+      message: userDetails.message,
+      service: userDetails.service ? userDetails.service.value : "",
+      coupon: userDetails.coupon,
+      submissionDate,
+      submissionTime
+    };
+
+    try {
+      // Save appointment to Firebase
+      await push(ref(db, "userappoinment"), appointmentData);
+      const newCount = appointmentCount ? parseInt(appointmentCount) + 1 : 1;
+      localStorage.setItem(countKey, newCount);
+
+      // Prepare WhatsApp API payload
+      const phoneWithCountryCode = "91" + userDetails.phone;
+      const whatsappMessage = `Dear ${userDetails.name}, thank you for booking an appointment at Medzeal Mumbra. We provide expert Physiotherapy and Wellness services to help you recover from injuries and improve mobility. We look forward to serving you.`;
+      const whatsappPayload = {
+        token: "9958399157",
+        number: phoneWithCountryCode,
+        message: whatsappMessage
+      };
+
+      // Send WhatsApp message via API
+      const response = await fetch("https://wa.medblisss.com/send-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(whatsappPayload)
+      });
+
+      if (!response.ok) {
+        console.error("Failed to send WhatsApp message");
+      }
+
+      setPopupMessage(`Dear ${appointmentData.name}, your appointment booking has been successfully sent.`);
+      setShowPopup(true);
+    } catch (error) {
+      console.error("Error saving appointment:", error);
+      alert("Failed to book appointment. Please try again.");
+    }
   };
 
   const closePopup = () => {
@@ -248,8 +138,7 @@ export default function Appointment() {
   return (
     <>
       <Header />
-      <Breadcrumbs title="Get Your Appointment" menuText="Appointment" />
-
+      <Breadcrumbs title="Book Your Appointment" menuText="Appointment" />
       <section className="appointment single-page">
         <div className="container">
           <div className="row">
@@ -257,132 +146,79 @@ export default function Appointment() {
               <div className="appointment-inner">
                 <div className="title">
                   <h3>Book your appointment</h3>
-                  <p>We will confirm your appointment within 2 hours</p>
+                  <p>We will confirm your appointment soon</p>
                 </div>
                 <form className="form" onSubmit={handleSubmit}>
                   <div className="row">
-                    <div className="col-lg-6 col-md-6 col-12">
+                    {/* Name Input */}
+                    <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
                         <input
                           name="name"
                           type="text"
                           placeholder="Name"
                           value={userDetails.name}
-                          onChange={(e) => setUserDetails({ ...userDetails, name: e.target.value })}
+                          onChange={(e) =>
+                            setUserDetails({ ...userDetails, name: e.target.value })
+                          }
                           required
                         />
                       </div>
                     </div>
-                    <div className="col-lg-6 col-md-6 col-12">
-                      <div className="form-group">
-                        <input
-                          name="email"
-                          type="email"
-                          placeholder="Email"
-                          value={userDetails.email}
-                          onChange={(e) => setUserDetails({ ...userDetails, email: e.target.value })}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="col-lg-6 col-md-6 col-12">
+                    {/* Phone Input */}
+                    <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
                         <input
                           name="phone"
                           type="text"
-                          placeholder="Phone"
+                          placeholder="10-digit Phone Number"
                           value={userDetails.phone}
-                          onChange={(e) => setUserDetails({ ...userDetails, phone: e.target.value })}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="col-lg-6 col-md-6 col-12 mb-3">
-                      <select
-                        name="treatment"
-                        value={userDetails.treatment}
-                        onChange={handleTreatmentChange}
-                        className="form-select"
-                        required
-                      >
-                        <option value="" disabled>
-                          Select Treatment
-                        </option>
-                        <option value="Physiotherapy">Physiotherapy</option>
-                        <option value="Wellness Center">Wellness Center</option>
-                      </select>
-                    </div>
-
-                    {userDetails.treatment && subServices[userDetails.treatment] && (
-                      <div className="col-lg-6 col-md-6 col-12 mb-3">
-                        <select
-                          name="subService"
-                          value={userDetails.subService}
-                          onChange={handleSubServiceChange}
-                          className="form-select"
-                          required
-                        >
-                          <option value="" disabled>
-                            Select Sub-Service
-                          </option>
-                          {subServices[userDetails.treatment].map((subService, index) => (
-                            <option key={index} value={subService}>
-                              {subService}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-<div className="col-lg-6 col-md-6 col-12 mb-3">
-  <select
-    name="doctor"
-    value={userDetails.doctor}
-    onChange={handleDoctorChange}
-    className="form-select"
-    required
-  >
-    <option value="" disabled>
-      Select Doctor
-    </option>
-    {filteredDoctors.map((doctor, index) => (
-     <option key={index} value={doctor.uid}> {/* Use doctor.uid as the value */}
-     {doctor.name}
-   </option>
-    ))}
-  </select>
-</div>
-
-                    <div className="col-lg-6 col-md-6 col-12">
-                      <div className="form-group">
-                        <DateInput
-                          selectedDate={userDetails.appointmentDate}
-                          onDateChange={(e) =>
-                            setUserDetails({ ...userDetails, appointmentDate: e.target.value })
+                          onChange={(e) =>
+                            setUserDetails({ ...userDetails, phone: e.target.value })
                           }
+                          required
                         />
                       </div>
                     </div>
-
-                    <div className="col-lg-6 col-md-6 col-12">
+                    {/* Professional Service Dropdown */}
+                    <div className="col-lg-12 col-md-12 col-12">
+                      <div className="form-group">
+                        <Select
+                          name="service"
+                          options={serviceOptions}
+                          value={userDetails.service}
+                          onChange={(selectedOption) =>
+                            setUserDetails({ ...userDetails, service: selectedOption })
+                          }
+                          placeholder="Select Service"
+                          classNamePrefix="react-select"
+                          required
+                        />
+                        <p style={{ fontSize: "0.9rem", color: "#888", marginTop: "0.5rem" }}>
+                          You can change service later after booking confirmation.
+                        </p>
+                      </div>
+                    </div>
+                    {/* Coupon Code Input */}
+                    <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
                         <input
-                          name="time"
-                          type="time"
-                          value={userDetails.appointmentTime}
+                          name="coupon"
+                          type="text"
+                          placeholder="Coupon Code (optional)"
+                          value={userDetails.coupon}
                           onChange={(e) =>
-                            setUserDetails({ ...userDetails, appointmentTime: e.target.value })
+                            setUserDetails({ ...userDetails, coupon: e.target.value })
                           }
-                          required
                         />
                       </div>
                     </div>
-
+                    {/* Message Input (Optional) */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
                         <textarea
                           name="message"
-                          placeholder="Your Message"
+                          placeholder="Your Message (Optional)"
                           value={userDetails.message}
                           onChange={(e) =>
                             setUserDetails({ ...userDetails, message: e.target.value })
@@ -390,7 +226,7 @@ export default function Appointment() {
                         />
                       </div>
                     </div>
-
+                    {/* Submit Button */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
                         <button type="submit" className="btn btn-primary">
@@ -400,16 +236,8 @@ export default function Appointment() {
                     </div>
                   </div>
                 </form>
-
-                {showPopup && (
-                  <Popup message={popupMessage} onClose={closePopup} />
-                )}
+                {showPopup && <Popup message={popupMessage} onClose={closePopup} />}
               </div>
-            </div>
-
-            {/* WorkHour component on the right side */}
-            <div className="col-lg-5 col-md-12 col-12">
-              <WorkHour />
             </div>
           </div>
         </div>

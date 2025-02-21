@@ -1,3 +1,5 @@
+"use client";
+import { useState, useEffect } from "react";
 import Header from "@/components/Header/Header";
 import Appoinment from "./Home/Appoinment";
 import Blog from "./Home/Blog";
@@ -14,28 +16,40 @@ import Services from "./Home/Services";
 import Team from "./Home/Team";
 import Testimonial from "./Home/Testimonials";
 import WhyChoose from "./Home/WhyChoose";
+import BookingPopup from "@/components/BookingPopup"; // adjust the path as needed
 
 export default function Home() {
+  const [showBookingPopup, setShowBookingPopup] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowBookingPopup(true);
+    }, 3000); // 3-second delay
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <>
       <Header />
       <Hero />
       <Schedule />
+      <Appoinment />
       {/* <Features /> */}
       {/* <Funfact /> */}
       <WhyChoose />
       {/* <CallAction /> */}
       {/* <Portfolio /> */}
       <Services />
-      
       <Testimonial />
       {/* <Departments /> */}
-
       <Pricing />
       {/* <Team /> */}
       {/* <Blog /> */}
       {/* <Clients /> */}
-      {/* <Appoinment /> */}
+      
+      {showBookingPopup && (
+        <BookingPopup onClose={() => setShowBookingPopup(false)} />
+      )}
     </>
   );
 }
