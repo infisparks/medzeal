@@ -93,6 +93,8 @@ export default function EmotionalMessagePopup() {
       <button style={buttonStyle} onClick={handleBookAppointment}>
         Book Appointment
       </button>
+
+    
     </div>
   );
 }
