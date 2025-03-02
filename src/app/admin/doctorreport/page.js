@@ -1,8 +1,6 @@
-// app/doctor-dashboard/page.js
-
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { getDatabase, ref, get } from "firebase/database";
 import { app } from '../../../lib/firebaseConfig'; // Adjust the path if necessary
 import Header from "@/components/Header/Header"; // Ensure this path is correct
@@ -18,14 +16,19 @@ Chart.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 const DoctorDashboard = () => {
   const db = getDatabase(app);
 
+  const [rawAppointments, setRawAppointments] = useState([]);
   const [aggregatedData, setAggregatedData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // States for filters
+  const [selectedYear, setSelectedYear] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
+
   const dashboardRef = useRef(null); // Reference to the dashboard section for PDF generation
 
+  // Fetch appointments from Firebase and store raw data
   useEffect(() => {
-    // Fetch appointments and aggregate data
     const fetchAppointments = async () => {
       try {
         const appointmentsRef = ref(db, 'appointments/test'); // Adjust path if necessary
@@ -38,39 +41,7 @@ const DoctorDashboard = () => {
         const appointmentsData = snapshot.val();
         const appointmentsList = Object.values(appointmentsData);
 
-        // Aggregate data per doctor
-        const aggregation = {};
-
-        appointmentsList.forEach(appointment => {
-          const doctorName = appointment.doctor;
-          let price = appointment.price;
-
-          // Ensure price is a number
-          if (typeof price === "string") {
-            price = parseFloat(price) || 0;
-          } else {
-            price = Number(price) || 0;
-          }
-
-          if (aggregation[doctorName]) {
-            aggregation[doctorName].count += 1;
-            aggregation[doctorName].totalAmount += price;
-          } else {
-            aggregation[doctorName] = {
-              count: 1,
-              totalAmount: price,
-            };
-          }
-        });
-
-        // Convert aggregation object to array for easier mapping
-        const aggregatedArray = Object.keys(aggregation).map(doctorName => ({
-          name: doctorName,
-          count: aggregation[doctorName].count,
-          totalAmount: aggregation[doctorName].totalAmount,
-        }));
-
-        setAggregatedData(aggregatedArray);
+        setRawAppointments(appointmentsList);
         setLoading(false);
       } catch (err) {
         console.error("Error fetching appointments:", err);
@@ -81,6 +52,88 @@ const DoctorDashboard = () => {
 
     fetchAppointments();
   }, [db]);
+
+  // Create a list of distinct years from the appointment dates
+  const distinctYears = useMemo(() => {
+    const yearsSet = new Set();
+    rawAppointments.forEach(appointment => {
+      if (appointment.appointmentDate) {
+        const [year] = appointment.appointmentDate.split("-");
+        yearsSet.add(year);
+      }
+    });
+    return Array.from(yearsSet).sort();
+  }, [rawAppointments]);
+
+  // Define months array for the dropdown
+  const months = [
+    { value: "01", name: "January" },
+    { value: "02", name: "February" },
+    { value: "03", name: "March" },
+    { value: "04", name: "April" },
+    { value: "05", name: "May" },
+    { value: "06", name: "June" },
+    { value: "07", name: "July" },
+    { value: "08", name: "August" },
+    { value: "09", name: "September" },
+    { value: "10", name: "October" },
+    { value: "11", name: "November" },
+    { value: "12", name: "December" },
+  ];
+
+  // Filter and aggregate appointments based on selected year and month
+  useEffect(() => {
+    let filteredAppointments = rawAppointments;
+
+    if (selectedYear) {
+      filteredAppointments = filteredAppointments.filter(appointment => {
+        if (!appointment.appointmentDate) return false;
+        const [year] = appointment.appointmentDate.split("-");
+        return year === selectedYear;
+      });
+    }
+
+    if (selectedMonth) {
+      filteredAppointments = filteredAppointments.filter(appointment => {
+        if (!appointment.appointmentDate) return false;
+        const [, month] = appointment.appointmentDate.split("-");
+        return month === selectedMonth;
+      });
+    }
+
+    const aggregation = {};
+
+    filteredAppointments.forEach(appointment => {
+      const doctorName = appointment.doctor;
+      let price = appointment.price;
+
+      // Ensure price is a number
+      if (typeof price === "string") {
+        price = parseFloat(price) || 0;
+      } else {
+        price = Number(price) || 0;
+      }
+
+      if (aggregation[doctorName]) {
+        aggregation[doctorName].count += 1;
+        aggregation[doctorName].totalAmount += price;
+      } else {
+        aggregation[doctorName] = {
+          count: 1,
+          totalAmount: price,
+        };
+      }
+    });
+
+    // Convert the aggregation object to an array for mapping
+    const aggregatedArray = Object.keys(aggregation).map(doctorName => ({
+      name: doctorName,
+      count: aggregation[doctorName].count,
+      totalAmount: aggregation[doctorName].totalAmount,
+    }));
+
+    setAggregatedData(aggregatedArray);
+  }, [rawAppointments, selectedYear, selectedMonth]);
 
   // Prepare data for Chart.js
   const chartData = {
@@ -117,20 +170,22 @@ const DoctorDashboard = () => {
     const input = dashboardRef.current;
     if (!input) return;
 
-    html2canvas(input, { scale: 2 }).then(canvas => {
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'pt', 'a4');
+    html2canvas(input, { scale: 2 })
+      .then(canvas => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'pt', 'a4');
 
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save("Doctor_Dashboard_Report.pdf");
-    }).catch(err => {
-      console.error("Error generating PDF:", err);
-      alert("Failed to generate PDF. Please try again.");
-    });
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save("Doctor_Dashboard_Report.pdf");
+      })
+      .catch(err => {
+        console.error("Error generating PDF:", err);
+        alert("Failed to generate PDF. Please try again.");
+      });
   };
 
   if (loading) {
@@ -169,6 +224,45 @@ const DoctorDashboard = () => {
       <section className="doctor-dashboard" ref={dashboardRef}>
         <div className="container">
           <h2>Doctor Dashboard</h2>
+          
+          {/* Filter Section */}
+          <div className="filter-container">
+            <div className="filter-item">
+              <label htmlFor="yearFilter">Year: </label>
+              <select
+                id="yearFilter"
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value);
+                  setSelectedMonth(""); // Reset month when year changes
+                }}
+              >
+                <option value="">All Years</option>
+                {distinctYears.map((year, index) => (
+                  <option key={index} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="filter-item">
+              <label htmlFor="monthFilter">Month: </label>
+              <select
+                id="monthFilter"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                disabled={!selectedYear}
+              >
+                <option value="">All Months</option>
+                {months.map((month, index) => (
+                  <option key={index} value={month.value}>
+                    {month.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div className="chart-container">
             <Bar data={chartData} options={chartOptions} />
           </div>
@@ -178,10 +272,9 @@ const DoctorDashboard = () => {
                 <tr>
                   <th>Doctor Name</th>
                   <th>Total Appointments</th>
-                  <th>Total Amount Collected(rs)</th>
+                  <th>Total Amount Collected (rs)</th>
                 </tr>
               </thead>
-              
               <tbody>
                 {aggregatedData.map((doctor, index) => (
                   <tr key={index}>
@@ -212,6 +305,18 @@ const DoctorDashboard = () => {
         h2 {
           text-align: center;
           margin-bottom: 20px;
+        }
+        .filter-container {
+          display: flex;
+          justify-content: center;
+          gap: 20px;
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+        }
+        .filter-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
         }
         .chart-container {
           margin-bottom: 40px;
