@@ -50,6 +50,7 @@ export default function Staff() {
   const [userDetails, setUserDetails] = useState(initialUserDetails);
   const [doctors, setDoctors] = useState([]);
   const [emailError, setEmailError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
 
   const subServices = {
     Physiotherapy: [
@@ -112,10 +113,23 @@ export default function Staff() {
     }
   };
 
+  const handlePhoneChange = (e) => {
+    const phone = e.target.value;
+    // Allow only digits
+    if (!/^\d*$/.test(phone)) return;
+    setUserDetails({ ...userDetails, phone });
+    if (phone.length !== 10) {
+      setPhoneError("Phone number must be exactly 10 digits.");
+    } else {
+      setPhoneError("");
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (emailError) {
+    // Check for errors before submission
+    if (emailError || phoneError) {
       alert("Please fix the errors in the form before submitting.");
       return;
     }
@@ -141,22 +155,35 @@ export default function Staff() {
       await set(newAppointmentRef, appointmentData);
       alert("Appointment booked successfully!");
 
-      let message = `Hello ${appointmentData.name},\n\nYour appointment has been booked successfully! Here are your details:\n- Treatment: ${appointmentData.treatment}\n- Service: ${appointmentData.subCategory}\n- Doctor: ${appointmentData.doctor}\n- Date: ${appointmentData.appointmentDate}\n- Time: ${appointmentData.appointmentTime}`;
+      // Construct a professional message for the appointment
+      let message = `Dear ${appointmentData.name},\n\nYour appointment has been confirmed. Please find the details below:\n• Treatment: ${appointmentData.treatment}\n• Service: ${appointmentData.subCategory}\n• Doctor: ${appointmentData.doctor}\n• Date: ${appointmentData.appointmentDate}\n• Time: ${appointmentData.appointmentTime}\n\nThank you for choosing our services. We look forward to serving you.`;
 
+      // Append additional details if available
       if (appointmentData.message && appointmentData.message.trim() !== "") {
-        message += `\n- Message: ${appointmentData.message}`;
+        message += `\n• Note: ${appointmentData.message}`;
       }
-
       if (appointmentData.email && appointmentData.email.trim() !== "") {
-        message += `\n- Email: ${appointmentData.email}`;
+        message += `\n• Email: ${appointmentData.email}`;
       }
 
-      const encodedMessage = encodeURIComponent(message);
-      const whatsappNumber = appointmentData.phone;
-      const whatsappLink = `https://wa.me/+91${whatsappNumber}?text=${encodedMessage}`;
+      // Use the API to send a WhatsApp message
+      const apiResponse = await fetch("https://wa.medblisss.com/send-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: "99583991572",
+          number: "91" + appointmentData.phone, // Prepend country code "91"
+          message: message,
+        }),
+      });
 
-      window.open(whatsappLink, "_blank");
+      if (!apiResponse.ok) {
+        throw new Error("API call failed");
+      }
 
+      // Optionally, handle API response data here if needed
       setUserDetails(initialUserDetails);
     } catch (error) {
       console.error("Error during appointment booking:", error);
@@ -256,7 +283,8 @@ export default function Staff() {
                     <strong>Treatment:</strong> {userDetails.treatment || "N/A"}
                   </p>
                   <p>
-                    <strong>Subcategory:</strong> {userDetails.subCategory || "N/A"}
+                    <strong>Subcategory:</strong>{" "}
+                    {userDetails.subCategory || "N/A"}
                   </p>
                   <p>
                     <strong>Doctor:</strong> {userDetails.doctor || "N/A"}
@@ -334,15 +362,22 @@ export default function Staff() {
                           id="phone"
                           name="phone"
                           type="text"
-                          placeholder="Phone"
+                          placeholder="Phone (10-digit number)"
                           value={userDetails.phone}
-                          onChange={(e) =>
-                            setUserDetails({ ...userDetails, phone: e.target.value })
-                          }
+                          onChange={handlePhoneChange}
                           required
-                          style={inputStyle}
+                          style={{
+                            ...inputStyle,
+                            borderColor: phoneError ? "#e74c3c" : "#ccc",
+                          }}
                           aria-required="true"
+                          aria-invalid={phoneError ? "true" : "false"}
                         />
+                        {phoneError && (
+                          <span style={{ color: "#e74c3c", fontSize: "14px" }}>
+                            {phoneError}
+                          </span>
+                        )}
                       </div>
                     </div>
 
