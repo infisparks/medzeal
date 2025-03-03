@@ -34,7 +34,7 @@ export default function EmotionalMessagePopup() {
     const interval = setInterval(() => {
       const randomMessage = messages[Math.floor(Math.random() * messages.length)];
       setCurrentMessage(randomMessage);
-    }, 10000);
+    }, 4000);
 
     return () => {
       clearInterval(interval);
