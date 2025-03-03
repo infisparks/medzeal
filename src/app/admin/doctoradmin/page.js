@@ -13,6 +13,11 @@ const DoctorAdminDashboard = () => {
   // Define only the four required cards
   const cards = [
     { 
+      title: 'Sell Report', 
+      path: '/admin/sellpage',
+      icon: <FaShoppingCart size={40} color="#0d6efd" />
+    },
+    { 
       title: 'Add Vendor', 
       path: '/admin/vendorentry',
       icon: <FaUsers size={40} color="#0d6efd" />
