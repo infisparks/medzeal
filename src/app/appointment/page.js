@@ -7,6 +7,7 @@ import Breadcrumbs from "@/components/Breadcrumbs";
 import Header from "@/components/Header/Header";
 import Popup from "@/components/Popup";
 import Select from "react-select";
+import { FaUser, FaPhoneAlt, FaClipboardList, FaTags, FaPen } from 'react-icons/fa'; // Icons from react-icons
 
 const physiotherapyServices = [
   { icon: "icofont-physiotherapist", title: "Neuro Physiotherapy", desc: "Specialized physiotherapy for neurological conditions, helping you recover and manage symptoms." },
@@ -47,6 +48,15 @@ const serviceOptions = [
       label: service.title,
     })),
   },
+  {
+    label: "Other",
+    options: [
+      {
+        value: "other",
+        label: "Other (Please Specify)"
+      }
+    ]
+  }
 ];
 
 export default function Appointment() {
@@ -57,6 +67,7 @@ export default function Appointment() {
     phone: "",
     message: "",
     service: null,
+    customService: "", // For the "Other" service
     coupon: ""
   });
   const [showPopup, setShowPopup] = useState(false);
@@ -88,7 +99,7 @@ export default function Appointment() {
       name: userDetails.name,
       phone: userDetails.phone,
       message: userDetails.message,
-      service: userDetails.service ? userDetails.service.value : "",
+      service: userDetails.service ? userDetails.service.value : userDetails.customService, // Use custom service if "Other"
       coupon: userDetails.coupon,
       submissionDate,
       submissionTime
@@ -141,11 +152,11 @@ export default function Appointment() {
       <Breadcrumbs title="Book Your Appointment" menuText="Appointment" />
       <section className="appointment single-page">
         <div className="container">
-          <div className="row">
-            <div className="col-lg-7 col-md-12 col-12">
-              <div className="appointment-inner">
-                <div className="title">
-                  <h3>Book your appointment</h3>
+          <div className="row justify-content-center">
+            <div className="col-lg-8 col-md-10 col-12">
+              <div className="appointment-inner bg-light p-4 rounded shadow-sm">
+                <div className="title mb-4 text-center">
+                  <h3 className="mb-3">Book your appointment</h3>
                   <p>We will confirm your appointment soon</p>
                 </div>
                 <form className="form" onSubmit={handleSubmit}>
@@ -153,21 +164,24 @@ export default function Appointment() {
                     {/* Name Input */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
+                        <label htmlFor="name"><FaUser className="mr-2" /> Name</label>
                         <input
                           name="name"
                           type="text"
-                          placeholder="Name"
+                          placeholder="Enter your name"
                           value={userDetails.name}
                           onChange={(e) =>
                             setUserDetails({ ...userDetails, name: e.target.value })
                           }
                           required
+                          className="form-control"
                         />
                       </div>
                     </div>
                     {/* Phone Input */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
+                        <label htmlFor="phone"><FaPhoneAlt className="mr-2" /> Phone</label>
                         <input
                           name="phone"
                           type="text"
@@ -177,31 +191,44 @@ export default function Appointment() {
                             setUserDetails({ ...userDetails, phone: e.target.value })
                           }
                           required
+                          className="form-control"
                         />
                       </div>
                     </div>
                     {/* Professional Service Dropdown */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
+                        <label htmlFor="service"><FaClipboardList className="mr-2" /> Service</label>
                         <Select
                           name="service"
                           options={serviceOptions}
                           value={userDetails.service}
-                          onChange={(selectedOption) =>
-                            setUserDetails({ ...userDetails, service: selectedOption })
-                          }
+                          onChange={(selectedOption) => {
+                            if (selectedOption.value === "other") {
+                              setUserDetails({ ...userDetails, service: selectedOption, customService: "" });
+                            } else {
+                              setUserDetails({ ...userDetails, service: selectedOption, customService: "" });
+                            }
+                          }}
                           placeholder="Select Service"
                           classNamePrefix="react-select"
                           required
                         />
-                        <p style={{ fontSize: "0.9rem", color: "#888", marginTop: "0.5rem" }}>
-                          You can change service later after booking confirmation.
-                        </p>
+                        {userDetails.service?.value === "other" && (
+                          <input
+                            type="text"
+                            placeholder="Enter your custom service"
+                            value={userDetails.customService}
+                            onChange={(e) => setUserDetails({ ...userDetails, customService: e.target.value })}
+                            className="form-control mt-2"
+                          />
+                        )}
                       </div>
                     </div>
                     {/* Coupon Code Input */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
+                        <label htmlFor="coupon"><FaTags className="mr-2" /> Coupon Code</label>
                         <input
                           name="coupon"
                           type="text"
@@ -210,26 +237,29 @@ export default function Appointment() {
                           onChange={(e) =>
                             setUserDetails({ ...userDetails, coupon: e.target.value })
                           }
+                          className="form-control"
                         />
                       </div>
                     </div>
                     {/* Message Input (Optional) */}
                     <div className="col-lg-12 col-md-12 col-12">
                       <div className="form-group">
+                        <label htmlFor="message"><FaPen className="mr-2" /> Your Message (Optional)</label>
                         <textarea
                           name="message"
-                          placeholder="Your Message (Optional)"
+                          placeholder="Enter any additional message"
                           value={userDetails.message}
                           onChange={(e) =>
                             setUserDetails({ ...userDetails, message: e.target.value })
                           }
+                          className="form-control"
                         />
                       </div>
                     </div>
                     {/* Submit Button */}
-                    <div className="col-lg-12 col-md-12 col-12">
+                    <div className="col-lg-12 col-md-12 col-12 text-center">
                       <div className="form-group">
-                        <button type="submit" className="btn btn-primary">
+                        <button type="submit" className="btn btn-primary btn-lg w-100">
                           Book Appointment
                         </button>
                       </div>
