@@ -58,6 +58,7 @@ const AdminDashboard = () => {
       <div className="row g-4">
         {[
           { title: "Book Appointment", icon: faBookOpen, link: "/admin/directbooking", color: "primary" },
+          { title: "ADD Amount", icon: faBoxOpen, link: "/admin/approval", color: "danger" },
           { title: "Online Appointments", icon: faCheckCircle, link: "/admin/onlinebooking", color: "success" },
           
           { title: "Today Appointments", icon: faCalendarDay, link: "/admin/todayattend", color: "info" },

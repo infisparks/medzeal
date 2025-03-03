@@ -31,7 +31,8 @@ import {
   BsCheckCircle, 
   BsExclamationTriangle, 
   BsSave, 
-  BsTrash 
+  BsTrash,
+  BsPencil
 } from 'react-icons/bs';
 
 const VendorProductPage = () => {
@@ -65,6 +66,12 @@ const VendorProductPage = () => {
   // Track which product's history is toggled open
   // e.g., { productId1: true, productId2: false }
   const [historyToggles, setHistoryToggles] = useState({});
+
+  // New state for editing prices for each product
+  // priceEditing: { productId: true/false }
+  // priceValues: { productId: { productPrice, mrpPrice } }
+  const [priceEditing, setPriceEditing] = useState({});
+  const [priceValues, setPriceValues] = useState({});
 
   // State for toggling the add product form
   const [showAddProductForm, setShowAddProductForm] = useState(false);
@@ -265,7 +272,81 @@ const VendorProductPage = () => {
   };
 
   // -------------------------------
-  // 4. Toggle History View
+  // 4. Handle Price & MRP Update
+  // -------------------------------
+  const handleEditPrice = (productId, product) => {
+    setPriceEditing((prev) => ({
+      ...prev,
+      [productId]: true,
+    }));
+    setPriceValues((prev) => ({
+      ...prev,
+      [productId]: {
+        productPrice: product.productPrice,
+        mrpPrice: product.mrpPrice,
+      },
+    }));
+  };
+
+  const handlePriceChange = (productId, field, e) => {
+    const value = e.target.value;
+    setPriceValues((prev) => ({
+      ...prev,
+      [productId]: {
+        ...prev[productId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSavePrice = async (productId) => {
+    const newPriceData = priceValues[productId];
+    if (!newPriceData) return;
+    const { productPrice, mrpPrice } = newPriceData;
+    
+    // Validate the values
+    const newProductPrice = parseFloat(productPrice);
+    const newMrpPrice = parseFloat(mrpPrice);
+    
+    if (isNaN(newProductPrice) || isNaN(newMrpPrice) || newProductPrice < 0 || newMrpPrice < 0) {
+      showToast('Please enter valid numbers for product price and MRP.', 'danger');
+      return;
+    }
+    
+    const productPath = `vendors/${vendorId}/products/${productId}`;
+    const productRef = ref(db, productPath);
+    try {
+      await update(productRef, {
+        productPrice: newProductPrice,
+        mrpPrice: newMrpPrice,
+        lastUpdated: new Date().toISOString(),
+      });
+      showToast('Product prices updated successfully!', 'success');
+      // Turn off editing mode for this product
+      setPriceEditing((prev) => ({
+        ...prev,
+        [productId]: false,
+      }));
+    } catch (err) {
+      console.error('Error updating product prices:', err);
+      showToast('Failed to update product prices. Please try again.', 'danger');
+    }
+  };
+
+  const handleCancelPriceEdit = (productId) => {
+    setPriceEditing((prev) => ({
+      ...prev,
+      [productId]: false,
+    }));
+    setPriceValues((prev) => {
+      const updated = { ...prev };
+      delete updated[productId];
+      return updated;
+    });
+  };
+
+  // -------------------------------
+  // 5. Toggle History View
   // -------------------------------
   const handleToggleHistory = (productId) => {
     setHistoryToggles((prev) => ({
@@ -275,7 +356,7 @@ const VendorProductPage = () => {
   };
 
   // -------------------------------
-  // 5. Toast Notification Handler
+  // 6. Toast Notification Handler
   // -------------------------------
   const showToast = (message, variant) => {
     setToast({
@@ -295,7 +376,7 @@ const VendorProductPage = () => {
   };
 
   // -------------------------------
-  // 6. Rendering Logic
+  // 7. Rendering Logic
   // -------------------------------
   if (loading) {
     return (
@@ -484,6 +565,7 @@ const VendorProductPage = () => {
               <th>Credit Cycle (Days)</th>
               <th>Add Qty</th>
               <th>History</th>
+              <th>Update Price</th>
             </tr>
           </thead>
           <tbody>
@@ -502,8 +584,32 @@ const VendorProductPage = () => {
                     <td>{product.name}</td>
                     <td>{product.avgQuantity}</td>
                     <td>{product.quantity}</td>
-                    <td>{product.productPrice.toFixed(2)}</td>
-                    <td>{product.mrpPrice.toFixed(2)}</td>
+                    <td>
+                      {priceEditing[productId] ? (
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={priceValues[productId]?.productPrice || product.productPrice}
+                          onChange={(e) => handlePriceChange(productId, 'productPrice', e)}
+                        />
+                      ) : (
+                        product.productPrice.toFixed(2)
+                      )}
+                    </td>
+                    <td>
+                      {priceEditing[productId] ? (
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={priceValues[productId]?.mrpPrice || product.mrpPrice}
+                          onChange={(e) => handlePriceChange(productId, 'mrpPrice', e)}
+                        />
+                      ) : (
+                        product.mrpPrice.toFixed(2)
+                      )}
+                    </td>
                     <td>{product.creditCycleDate}</td>
                     {/* Add Quantity Form (inline) */}
                     <td style={{ minWidth: '150px' }}>
@@ -531,11 +637,28 @@ const VendorProductPage = () => {
                         {showHistory ? 'Hide' : 'Show'}
                       </Button>
                     </td>
+                    {/* Price Update Column */}
+                    <td>
+                      {priceEditing[productId] ? (
+                        <>
+                          <Button variant="success" size="sm" onClick={() => handleSavePrice(productId)}>
+                            <BsSave className="me-1" /> Save
+                          </Button>
+                          <Button variant="secondary" size="sm" className="ms-1" onClick={() => handleCancelPriceEdit(productId)}>
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="info" size="sm" onClick={() => handleEditPrice(productId, product)}>
+                          <BsPencil className="me-1" /> Edit
+                        </Button>
+                      )}
+                    </td>
                   </tr>
 
                   {/* Collapsible History Row */}
                   <tr>
-                    <td colSpan={9} style={{ padding: 0, border: 'none' }}>
+                    <td colSpan={10} style={{ padding: 0, border: 'none' }}>
                       <Collapse in={showHistory}>
                         <div id={`history-collapse-${productId}`}>
                           <Table
@@ -586,28 +709,6 @@ const VendorProductPage = () => {
           </tbody>
         </Table>
       )}
-    </div>
-  );
-
-  // -------------------------------
-  // 7. Toast Notifications and Custom Styles
-  // -------------------------------
-  return (
-    <div className="container mt-5 mb-5">
-      {/* Toast Notifications */}
-      <ToastContainer position="top-end" className="p-3">
-        <Toast
-          onClose={() => setToast({ ...toast, show: false })}
-          show={toast.show}
-          bg={toast.variant}
-          delay={3000}
-          autohide
-        >
-          <Toast.Body className="text-white">{toast.message}</Toast.Body>
-        </Toast>
-      </ToastContainer>
-
-      {/* Rest of the component as above */}
 
       {/* Custom Styles */}
       <style jsx>{`

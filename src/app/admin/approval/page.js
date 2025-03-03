@@ -2,7 +2,10 @@
 import React, { useEffect, useState, useMemo } from 'react'; 
 import { db } from '../../../lib/firebaseConfig'; 
 import { ref, onValue, remove, update } from 'firebase/database'; 
-import { FaCheck, FaTrash, FaWhatsapp, FaPhone, FaCalendar, FaClock, FaUser, FaEnvelope, FaSearch, FaCalendarAlt } from 'react-icons/fa'; 
+import { 
+  FaCheck, FaTrash, FaWhatsapp, FaPhone, FaCalendar, FaClock, FaUser, 
+  FaEnvelope, FaSearch, FaCalendarAlt 
+} from 'react-icons/fa'; 
 
 const Approval = () => { 
   const [appointments, setAppointments] = useState(null); 
@@ -10,6 +13,8 @@ const Approval = () => {
   const [selectedMonth, setSelectedMonth] = useState(''); 
   const [selectedYear, setSelectedYear] = useState(''); 
   const [searchTerm, setSearchTerm] = useState(''); 
+  // State to hold updates for each appointment (paymentMethod, price, consultantAmount)
+  const [appointmentUpdates, setAppointmentUpdates] = useState({});
 
   useEffect(() => { 
     const appointmentsRef = ref(db, 'appointments'); 
@@ -38,11 +43,6 @@ const Approval = () => {
       return isDateMatch && isMonthMatch && isYearMatch && isSearchMatch && !approved; 
     }); 
   }, [appointments, selectedDate, selectedMonth, selectedYear, searchTerm]); 
-
-  // Removed totalPrice calculation
-  // const totalPrice = useMemo(() => { 
-  //   return filteredAppointments.reduce((acc, { price }) => acc + price, 0); 
-  // }, [filteredAppointments]); 
 
   const today = new Date().toISOString().split('T')[0]; 
 
@@ -74,30 +74,34 @@ const Approval = () => {
     }
   };
 
+  // Helper to update local state for each appointment's new fields
+  const handleUpdateChange = (id, field, value) => {
+    setAppointmentUpdates((prev) => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        [field]: value,
+      },
+    }));
+  };
+
   const handleApprove = async (id, uid, email, appointmentDate, appointmentTime, doctor, name) => { 
     const appointmentRef = ref(db, `appointments/${uid}/${id}`); 
+    const { paymentMethod = "", price = "", consultantAmount } = appointmentUpdates[id] || {}; 
 
     try {
-        await update(appointmentRef, { approved: true });
-        
-        await fetch('/api/send-email', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                recipientEmail: email, 
-                appointmentDate, 
-                appointmentTime, 
-                doctor,
-                name // Include name if needed
-            }),
-        });
-        
-        alert('Appointment approved and email sent successfully!');
+      await update(appointmentRef, { 
+        approved: true, 
+        paymentMethod, 
+        price: price ? parseFloat(price) : 0, 
+        ...(consultantAmount ? { consultantAmount: parseFloat(consultantAmount) } : {})
+      });
+      
+      
+   
     } catch (error) {
-        console.error("Error updating approval:", error);
-        alert('Error approving appointment.');
+      console.error("Error updating approval:", error);
+      alert('Error approving appointment.');
     }
   };
 
@@ -143,7 +147,9 @@ const Approval = () => {
           > 
             <option value="">All Months</option> 
             {Array.from({ length: 12 }, (_, i) => ( 
-              <option key={i} value={String(i + 1).padStart(2, '0')}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option> 
+              <option key={i} value={String(i + 1).padStart(2, '0')}>
+                {new Date(0, i).toLocaleString('default', { month: 'long' })}
+              </option> 
             ))} 
           </select> 
         </div> 
@@ -169,9 +175,6 @@ const Approval = () => {
         Today Appointments 
       </button> 
 
-      {/* Removed totalPrice display */}
-      {/* <h2 className="h5 mb-4"><FaDollarSign /> Total Price: ${totalPrice}</h2> */} 
-
       <div className="row"> 
         {filteredAppointments.length > 0 ? ( 
           filteredAppointments.map(({ id, uid, appointmentDate, appointmentTime, doctor, approved, message, name, phone, email }) => ( 
@@ -181,21 +184,76 @@ const Approval = () => {
                   <p><strong><FaCalendar /> Date:</strong> {appointmentDate}</p> 
                   <p><strong><FaClock /> Time:</strong> {appointmentTime}</p> 
                   <p><strong><FaUser /> Doctor:</strong> {doctor}</p> 
+                  
+                  {/* New Payment Details Section */}
+                  <p>
+                    <strong>Payment Method:</strong> 
+                    <select 
+                      value={appointmentUpdates[id]?.paymentMethod || ""} 
+                      onChange={(e) => handleUpdateChange(id, 'paymentMethod', e.target.value)} 
+                      className="form-select form-select-sm"
+                    >
+                      <option value="">Select Payment Method</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Online">Online</option>
+                    </select>
+                  </p>
+                  <p>
+                    <strong>Price:</strong> 
+                    <input 
+                      type="number" 
+                      value={appointmentUpdates[id]?.price || ""} 
+                      onChange={(e) => handleUpdateChange(id, 'price', e.target.value)} 
+                      placeholder="Price" 
+                      className="form-control form-control-sm" 
+                    />
+                  </p>
+                  <p>
+                    <input 
+                      type="checkbox" 
+                      checked={appointmentUpdates[id]?.addConsultant || false} 
+                      onChange={(e) => handleUpdateChange(id, 'addConsultant', e.target.checked)} 
+                      id={`addConsultant-${id}`}
+                    />
+                    <label htmlFor={`addConsultant-${id}`}> Add Consultant Amount</label>
+                  </p>
+                  {appointmentUpdates[id]?.addConsultant && (
+                    <p>
+                      <strong>Consultant Amount:</strong> 
+                      <input 
+                        type="number" 
+                        value={appointmentUpdates[id]?.consultantAmount || ""} 
+                        onChange={(e) => handleUpdateChange(id, 'consultantAmount', e.target.value)} 
+                        placeholder="Consultant Amount" 
+                        className="form-control form-control-sm" 
+                      />
+                    </p>
+                  )}
+                  {/* End Payment Details Section */}
+
                   <p><strong>Approved:</strong> {approved ? 'Yes' : 'No'}</p> 
                   <p><strong><FaEnvelope /> Message:</strong> {message}</p>
                   <p><strong><FaEnvelope /> Email:</strong> {email}</p> 
                   <p><strong><FaUser /> Name:</strong> {name}</p> 
                   <p><strong><FaPhone /> Phone:</strong> {phone}</p> 
                   
-                  {/* Modern Button Layout */}
                   <div className="btn-group d-flex justify-content-between mt-3">
-                    <button onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name)} className="btn btn-success btn-sm d-flex align-items-center"> 
+                    <button 
+                      onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name)} 
+                      className="btn btn-success btn-sm d-flex align-items-center"
+                    > 
                       <FaCheck className="me-2" /> Approve 
                     </button>
-                    <button onClick={() => handleDelete(uid, id)} className="btn btn-danger btn-sm d-flex align-items-center"> 
+                    <button 
+                      onClick={() => handleDelete(uid, id)} 
+                      className="btn btn-danger btn-sm d-flex align-items-center"
+                    > 
                       <FaTrash className="me-2" /> Delete 
                     </button> 
-                    <button onClick={() => handleSendCustomWhatsApp(phone, name, appointmentDate, appointmentTime, doctor)} className="btn btn-warning btn-sm d-flex align-items-center">
+                    <button 
+                      onClick={() => handleSendCustomWhatsApp(phone, name, appointmentDate, appointmentTime, doctor)} 
+                      className="btn btn-warning btn-sm d-flex align-items-center"
+                    >
                       <FaWhatsapp className="me-2" /> WhatsApp
                     </button>
                     <a href={`tel:${phone}`} className="btn btn-info btn-sm d-flex align-items-center"> 
