@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import letterhead from "../../../../public/letterhead.png";
+import front from "../../../../public/front.png";
 import {
   FaCalendar,
   FaSearch,
@@ -25,8 +26,8 @@ const DoctorPrescription = () => {
   const router = useRouter();
 
   // State for all appointments and filtering
-  const [allAppointments, setAllAppointments] = useState([]); // All appointments regardless of date
-  const [appointments, setAppointments] = useState([]); // Appointments for the selected date
+  const [allAppointments, setAllAppointments] = useState([]);
+  const [appointments, setAppointments] = useState([]);
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -47,14 +48,15 @@ const DoctorPrescription = () => {
   const [overallInstruction, setOverallInstruction] = useState("");
   const [prescriptionSaved, setPrescriptionSaved] = useState(false);
 
-  // State for the modal popup of previous history
+  // Previous history modal state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyModalItems, setHistoryModalItems] = useState([]);
 
-  // Ref for hidden report (PDF)
-  const reportRef = useRef(null);
+  // Refs for hidden PDF pages
+  const frontRef = useRef(null);
+  const prescriptionRef = useRef(null);
 
-  // Modal inline styles
+  // Modal styles
   const modalOverlayStyle = {
     position: "fixed",
     top: 0,
@@ -88,7 +90,7 @@ const DoctorPrescription = () => {
     fontSize: "1.2rem",
   };
 
-  // Fetch all appointments from the Realtime Database and filter by selected date
+  // Fetch appointments from Firebase
   useEffect(() => {
     const appointmentsRef = ref(db, "appointments");
     const unsubscribe = onValue(appointmentsRef, (snapshot) => {
@@ -101,7 +103,6 @@ const DoctorPrescription = () => {
           });
         });
       }
-
       setAllAppointments(all);
       const filtered = all.filter((a) => a.appointmentDate === selectedDate);
       setAppointments(filtered);
@@ -123,9 +124,7 @@ const DoctorPrescription = () => {
     });
   }, [appointments, searchTerm]);
 
-  // --- Prescription Add/Update/Download Logic ---
-
-  // Open form for adding (if no prescription exists)
+  // --- Prescription Logic ---
   const handleSelectAppointmentForAdd = (appointment) => {
     setSelectedAppointment(appointment);
     setSymptoms("");
@@ -142,7 +141,6 @@ const DoctorPrescription = () => {
     setPrescriptionSaved(false);
   };
 
-  // Open form for updating (prefill if prescription exists)
   const handleSelectAppointmentForUpdate = (appointment) => {
     if (appointment.presciption) {
       setSelectedAppointment(appointment);
@@ -169,7 +167,6 @@ const DoctorPrescription = () => {
     }
   };
 
-  // Download existing prescription (without updating)
   const handleDownloadExistingPrescription = (appointment) => {
     if (appointment.presciption) {
       setSelectedAppointment(appointment);
@@ -186,13 +183,12 @@ const DoctorPrescription = () => {
         setShowMedicineDetails(false);
       }
       setTimeout(() => {
-        generateAndUploadPDF(false); // Just download
+        generateAndUploadPDF(false);
       }, 500);
     }
   };
 
-  // --- Medicine Details Functions ---
-
+  // Medicine Details Functions
   const toggleMedicineDetails = () => {
     setShowMedicineDetails((prev) => !prev);
   };
@@ -226,23 +222,35 @@ const DoctorPrescription = () => {
     setMedicines(newMedicines);
   };
 
-  // --- PDF Generation & Download ---
-
+  // --- PDF Generation & Compression ---
   const generatePDFBlob = async () => {
-    if (!reportRef.current) return null;
-    const canvas = await html2canvas(reportRef.current, { scale: 1 });
+    if (!frontRef.current || !prescriptionRef.current) return null;
     const pdf = new jsPDF("p", "mm", "a4");
     const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    // Page 1: Front Page
+    const canvasFront = await html2canvas(frontRef.current, { scale: 1.5 });
+    const pdfHeightFront = (canvasFront.height * pdfWidth) / canvasFront.width;
     pdf.addImage(
-      canvas.toDataURL("image/png"),
-      "PNG",
+      canvasFront.toDataURL("image/jpeg", 0.7),
+      "JPEG",
       0,
       0,
       pdfWidth,
-      pdfHeight,
-      undefined,
-      "FAST"
+      pdfHeightFront
+    );
+
+    // Page 2: Prescription Details
+    pdf.addPage();
+    const canvasPrescription = await html2canvas(prescriptionRef.current, { scale: 1.5 });
+    const pdfHeightPrescription = (canvasPrescription.height * pdfWidth) / canvasPrescription.width;
+    pdf.addImage(
+      canvasPrescription.toDataURL("image/jpeg", 0.7),
+      "JPEG",
+      0,
+      0,
+      pdfWidth,
+      pdfHeightPrescription
     );
     return pdf.output("blob");
   };
@@ -260,8 +268,7 @@ const DoctorPrescription = () => {
     URL.revokeObjectURL(blobURL);
   };
 
-  // --- Upload PDF to Firebase Storage & Send WhatsApp ---
-
+  // Upload PDF to Firebase & send via WhatsApp
   const uploadPDFAndSendWhatsApp = async () => {
     if (!selectedAppointment) return;
     const pdfBlob = await generatePDFBlob();
@@ -292,7 +299,7 @@ const DoctorPrescription = () => {
     }
   };
 
-  // Combined function to download or upload/send PDF
+  // Combined function for PDF actions
   const generateAndUploadPDF = async (uploadAndSend = true) => {
     if (uploadAndSend) {
       await uploadPDFAndSendWhatsApp();
@@ -301,8 +308,7 @@ const DoctorPrescription = () => {
     }
   };
 
-  // --- Form Submit Handler ---
-
+  // Form Submit Handler
   const handleSubmitPrescription = async (e) => {
     e.preventDefault();
     if (!selectedAppointment) return;
@@ -370,7 +376,6 @@ const DoctorPrescription = () => {
       <div className="row">
         {filteredAppointments.length > 0 ? (
           filteredAppointments.map((appointment, idx) => {
-            // Find previous history (other appointments with the same phone having a prescription)
             const phoneHistory = allAppointments.filter(
               (a) =>
                 a.phone === appointment.phone &&
@@ -382,8 +387,7 @@ const DoctorPrescription = () => {
                 <div className="card shadow-sm border-primary h-100">
                   <div className="card-body">
                     <h5 className="card-title">
-                      <FaUser className="me-2 text-primary" />{" "}
-                      {appointment.name}
+                      <FaUser className="me-2 text-primary" /> {appointment.name}
                     </h5>
                     <p className="card-text mb-1">
                       <strong>Doctor:</strong> {appointment.doctor}
@@ -392,13 +396,11 @@ const DoctorPrescription = () => {
                       <strong>Treatment:</strong> {appointment.treatment}
                     </p>
                     <p className="card-text mb-1">
-                      <strong>Subcategory:</strong>{" "}
-                      {appointment.subCategory}
+                      <strong>Subcategory:</strong> {appointment.subCategory}
                     </p>
                     <p className="card-text">
                       <strong>Phone:</strong> {appointment.phone}
                     </p>
-                    {/* See Previous History Button */}
                     {phoneHistory.length > 0 && (
                       <button
                         className="btn btn-secondary btn-sm mt-2"
@@ -410,7 +412,6 @@ const DoctorPrescription = () => {
                         See Previous History
                       </button>
                     )}
-                    {/* Prescription Buttons */}
                     <div className="mt-3">
                       {appointment.presciption ? (
                         <>
@@ -529,11 +530,7 @@ const DoctorPrescription = () => {
                             className="form-control"
                             value={medicine.name}
                             onChange={(e) =>
-                              handleMedicineChange(
-                                index,
-                                "name",
-                                e.target.value
-                              )
+                              handleMedicineChange(index, "name", e.target.value)
                             }
                             placeholder="Enter medicine name"
                           />
@@ -620,11 +617,7 @@ const DoctorPrescription = () => {
                             className="form-control"
                             value={medicine.instruction}
                             onChange={(e) =>
-                              handleMedicineChange(
-                                index,
-                                "instruction",
-                                e.target.value
-                              )
+                              handleMedicineChange(index, "instruction", e.target.value)
                             }
                             rows={2}
                             placeholder="Additional instruction for this medicine"
@@ -676,133 +669,153 @@ const DoctorPrescription = () => {
         </div>
       )}
 
-      {/* Hidden Report for PDF */}
+      {/* Hidden PDF Pages */}
       {selectedAppointment && (
-        <div
-          ref={reportRef}
-          style={{
-            width: "210mm",
-            minHeight: "297mm",
-            padding: "20mm",
-            backgroundImage: `url(${letterhead.src})`,
-            backgroundSize: "contain",
-            backgroundRepeat: "no-repeat",
-            backgroundPosition: "center top",
-            color: "#000",
-            position: "absolute",
-            top: "-10000px",
-            left: "-10000px",
-            fontFamily: "Arial, sans-serif",
-          }}
-        >
-          {/* Minimal Header */}
-          <div style={{ textAlign: "center", marginBottom: "10mm" }}></div>
-
-          {/* Patient Details */}
+        <>
+          {/* Page 1: Front Page */}
           <div
+            ref={frontRef}
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: "10mm",
+              width: "210mm",
+              height: "297mm",
+              overflow: "hidden",
+              position: "absolute",
+              top: "-10000px",
+              left: "-10000px",
             }}
           >
-            <div style={{ width: "45%" }}>
-              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-                <strong>Name:</strong> {selectedAppointment.name}
-              </p>
-              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-                <strong>Phone:</strong> {selectedAppointment.phone}
-              </p>
-            </div>
-            <div style={{ width: "45%", textAlign: "right" }}>
-              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-                <strong>Doctor:</strong> {selectedAppointment.doctor}
-              </p>
-              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-                <strong>Treatment:</strong> {selectedAppointment.treatment}
-              </p>
-              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-                <strong>Subcategory:</strong>{" "}
-                {selectedAppointment.subCategory}
-              </p>
-            </div>
+            <img
+              src={front.src}
+              alt="Front Page"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           </div>
 
-          <hr
+          {/* Page 2: Prescription Details */}
+          <div
+            ref={prescriptionRef}
             style={{
-              border: "none",
-              borderBottom: "1px solid #ccc",
-              marginBottom: "10mm",
+              width: "210mm",
+              minHeight: "297mm",
+              padding: "20mm",
+              backgroundImage: `url(${letterhead.src})`,
+              backgroundSize: "contain",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center top",
+              color: "#000",
+              position: "absolute",
+              top: "-10000px",
+              left: "-10000px",
+              fontFamily: "Arial, sans-serif",
             }}
-          />
-
-          {/* Prescription Details */}
-          <div style={{ marginBottom: "10mm" }}>
-            <h3 style={{ fontSize: "14pt", marginBottom: "4mm" }}>
-              Prescription Details
-            </h3>
-            <p style={{ fontSize: "12pt", margin: "4px 0" }}>
-              <strong>Symptoms/Disease:</strong> {symptoms}
-            </p>
-            {showMedicineDetails && medicines.length > 0 && (
-              <div style={{ marginTop: "5mm" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    padding: "8px 0",
-                    borderBottom: "1px solid #eee",
-                    fontWeight: "bold",
-                  }}
-                >
-                  <div style={{ flex: 3 }}>Medicine Name</div>
-                  <div style={{ flex: 1, textAlign: "center" }}>Days</div>
-                  <div style={{ flex: 2, textAlign: "center" }}>Time</div>
-                  <div style={{ flex: 3 }}>Instruction</div>
-                </div>
-                {medicines.map((medicine, index) => (
+          >
+            <div style={{ textAlign: "center", marginBottom: "10mm" }}></div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: "10mm",
+              }}
+            >
+              <div style={{ width: "45%" }}>
+                <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                  <strong>Name:</strong> {selectedAppointment.name}
+                </p>
+                <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                  <strong>Phone:</strong> {selectedAppointment.phone}
+                </p>
+              </div>
+              <div style={{ width: "45%", textAlign: "right" }}>
+                <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                  <strong>Doctor:</strong> {selectedAppointment.doctor}
+                </p>
+                <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                  <strong>Treatment:</strong> {selectedAppointment.treatment}
+                </p>
+                <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                  <strong>Subcategory:</strong> {selectedAppointment.subCategory}
+                </p>
+              </div>
+            </div>
+            <hr
+              style={{
+                border: "none",
+                borderBottom: "1px solid #ccc",
+                marginBottom: "10mm",
+              }}
+            />
+            <div style={{ marginBottom: "10mm" }}>
+              <h3 style={{ fontSize: "14pt", marginBottom: "4mm" }}>
+                Prescription Details
+              </h3>
+              <p style={{ fontSize: "12pt", margin: "4px 0" }}>
+                <strong>Symptoms/Disease:</strong> {symptoms}
+              </p>
+              {showMedicineDetails && medicines.length > 0 && (
+                <div style={{ marginTop: "5mm" }}>
                   <div
-                    key={index}
                     style={{
                       display: "flex",
                       padding: "8px 0",
-                      borderBottom: "1px solid #f5f5f5",
+                      borderBottom: "1px solid #eee",
+                      fontWeight: "bold",
                     }}
                   >
-                    <div style={{ flex: 3 }}>{medicine.name}</div>
-                    <div style={{ flex: 1, textAlign: "center" }}>
-                      {medicine.consumptionDays}
-                    </div>
-                    <div style={{ flex: 2, textAlign: "center" }}>
-                      {medicine.times.morning ? "Morning " : ""}
-                      {medicine.times.evening ? "Evening " : ""}
-                      {medicine.times.night ? "Night" : ""}
-                    </div>
-                    <div style={{ flex: 3 }}>{medicine.instruction}</div>
+                    <div style={{ flex: 3 }}>Medicine Name</div>
+                    <div style={{ flex: 1, textAlign: "center" }}>Days</div>
+                    <div style={{ flex: 2, textAlign: "center" }}>Time</div>
+                    <div style={{ flex: 4 }}>Instruction</div>
                   </div>
-                ))}
-              </div>
-            )}
+                  {medicines.map((medicine, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        display: "flex",
+                        padding: "8px 0",
+                        borderBottom: "1px solid #f5f5f5",
+                      }}
+                    >
+                      <div style={{ flex: 3 }}>{medicine.name}</div>
+                      <div style={{ flex: 1, textAlign: "center" }}>
+                        {medicine.consumptionDays}
+                      </div>
+                      <div style={{ flex: 2, textAlign: "center" }}>
+                        {medicine.times.morning ? "Morning " : ""}
+                        {medicine.times.evening ? "Evening " : ""}
+                        {medicine.times.night ? "Night" : ""}
+                      </div>
+                      <div
+                        style={{
+                          flex: 4,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {medicine.instruction}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: "10mm" }}>
+              <h3 style={{ fontSize: "14pt", marginBottom: "4mm" }}>
+                Overall Instructions
+              </h3>
+              <p style={{ fontSize: "12pt" }}>{overallInstruction}</p>
+            </div>
+            <hr
+              style={{
+                border: "none",
+                borderBottom: "1px solid #ccc",
+                marginBottom: "5mm",
+              }}
+            />
+            <div style={{ textAlign: "center", fontSize: "10pt" }}>
+              <p>Report generated on: {new Date().toLocaleString()}</p>
+            </div>
           </div>
-
-          {/* Overall Instructions */}
-          <div style={{ marginBottom: "10mm" }}>
-            <h3 style={{ fontSize: "14pt", marginBottom: "4mm" }}>
-              Overall Instructions
-            </h3>
-            <p style={{ fontSize: "12pt" }}>{overallInstruction}</p>
-          </div>
-
-          <hr
-            style={{
-              border: "none",
-              borderBottom: "1px solid #ccc",
-              marginBottom: "5mm",
-            }}
-          />
-          <div style={{ textAlign: "center", fontSize: "10pt" }}>
-            <p>Report generated on: {new Date().toLocaleString()}</p>
-          </div>
-        </div>
+        </>
       )}
 
       {/* Previous History Modal */}
@@ -827,8 +840,7 @@ const DoctorPrescription = () => {
                 }}
               >
                 <p>
-                  <strong>Appointment Date:</strong>{" "}
-                  {item.appointmentDate}
+                  <strong>Appointment Date:</strong> {item.appointmentDate}
                 </p>
                 <p>
                   <strong>Symptoms/Disease:</strong>{" "}
@@ -861,7 +873,14 @@ const DoctorPrescription = () => {
                                   (med.times.evening ? "Evening " : "") +
                                   (med.times.night ? "Night" : "")}
                               </td>
-                              <td>{med.instruction}</td>
+                              <td
+                                style={{
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {med.instruction}
+                              </td>
                             </tr>
                           ))}
                         </tbody>

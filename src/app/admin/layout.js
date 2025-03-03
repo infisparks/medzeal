@@ -42,7 +42,7 @@ export default function Layout({ children }) {
             '/admin/graphtotal': ['admin'],
             '/admin/bookedAppoinmentGraph': ['admin'],
             '/admin/creditcycle': ['admin'],
-            '/admin/sellpage': ['admin'],
+            '/admin/sellpage': ['admin', 'doctor'],
           };
 
           // Determine if the current path requires specific roles.

@@ -89,6 +89,12 @@ const Approval = () => {
     const appointmentRef = ref(db, `appointments/${uid}/${id}`); 
     const { paymentMethod = "", price = "", consultantAmount } = appointmentUpdates[id] || {}; 
 
+    // Validate required payment method
+    if (!paymentMethod) {
+      alert("Payment method is required.");
+      return;
+    }
+
     try {
       await update(appointmentRef, { 
         approved: true, 
@@ -97,8 +103,8 @@ const Approval = () => {
         ...(consultantAmount ? { consultantAmount: parseFloat(consultantAmount) } : {})
       });
       
-      
-   
+      // Optionally, you could send a confirmation email or WhatsApp message here
+      alert("Appointment approved successfully.");
     } catch (error) {
       console.error("Error updating approval:", error);
       alert('Error approving appointment.');
@@ -185,7 +191,7 @@ const Approval = () => {
                   <p><strong><FaClock /> Time:</strong> {appointmentTime}</p> 
                   <p><strong><FaUser /> Doctor:</strong> {doctor}</p> 
                   
-                  {/* New Payment Details Section */}
+                  {/* Payment Details Section */}
                   <p>
                     <strong>Payment Method:</strong> 
                     <select 
@@ -229,7 +235,6 @@ const Approval = () => {
                       />
                     </p>
                   )}
-                  {/* End Payment Details Section */}
 
                   <p><strong>Approved:</strong> {approved ? 'Yes' : 'No'}</p> 
                   <p><strong><FaEnvelope /> Message:</strong> {message}</p>

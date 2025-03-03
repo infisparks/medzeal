@@ -13,6 +13,11 @@ const DoctorAdminDashboard = () => {
   // Define only the four required cards
   const cards = [
     { 
+      title: 'ADD & View Prescription', 
+      path: '/admin/medicine',
+      icon: <FaClipboardList size={40} color="#0d6efd" />
+    },
+    { 
       title: 'Sell Report', 
       path: '/admin/sellpage',
       icon: <FaShoppingCart size={40} color="#0d6efd" />
