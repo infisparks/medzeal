@@ -9,6 +9,7 @@ import { Bar } from "react-chartjs-2";
 import { Chart, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+import { FaDownload, FaCalendarAlt, FaUserMd } from "react-icons/fa";
 
 // Register Chart.js components
 Chart.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -142,12 +143,12 @@ const DoctorDashboard = () => {
       {
         label: 'Total Appointments',
         data: aggregatedData.map(doctor => doctor.count),
-        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        backgroundColor: 'rgba(54, 162, 235, 0.6)',
       },
       {
         label: 'Total Amount Collected (rs)',
         data: aggregatedData.map(doctor => doctor.totalAmount),
-        backgroundColor: 'rgba(153, 102, 255, 0.6)',
+        backgroundColor: 'rgba(255, 99, 132, 0.6)',
       },
     ],
   };
@@ -157,10 +158,20 @@ const DoctorDashboard = () => {
     plugins: {
       legend: {
         position: 'top',
+        labels: {
+          font: {
+            family: 'Arial, sans-serif',
+            size: 14,
+          },
+        },
       },
       title: {
         display: true,
         text: 'Doctor Appointments and Earnings',
+        font: {
+          family: 'Arial, sans-serif',
+          size: 18,
+        },
       },
     },
   };
@@ -223,12 +234,17 @@ const DoctorDashboard = () => {
 
       <section className="doctor-dashboard" ref={dashboardRef}>
         <div className="container">
-          <h2>Doctor Dashboard</h2>
+          <h2>
+            <FaUserMd style={{ marginRight: '10px', color: '#3498db' }}/> 
+            Doctor Dashboard
+          </h2>
           
           {/* Filter Section */}
           <div className="filter-container">
             <div className="filter-item">
-              <label htmlFor="yearFilter">Year: </label>
+              <label htmlFor="yearFilter">
+                <FaCalendarAlt style={{ marginRight: '5px', color: '#3498db' }}/> Year:
+              </label>
               <select
                 id="yearFilter"
                 value={selectedYear}
@@ -246,7 +262,9 @@ const DoctorDashboard = () => {
               </select>
             </div>
             <div className="filter-item">
-              <label htmlFor="monthFilter">Month: </label>
+              <label htmlFor="monthFilter">
+                <FaCalendarAlt style={{ marginRight: '5px', color: '#3498db' }}/> Month:
+              </label>
               <select
                 id="monthFilter"
                 value={selectedMonth}
@@ -288,6 +306,7 @@ const DoctorDashboard = () => {
           </div>
           <div className="button-container">
             <button className="btn" onClick={downloadPDF}>
+              <FaDownload style={{ marginRight: '8px' }}/> 
               Download Report as PDF
             </button>
           </div>
@@ -296,27 +315,45 @@ const DoctorDashboard = () => {
 
       <style jsx>{`
         .doctor-dashboard {
-          padding: 20px;
+          padding: 40px 20px;
+          background: #f9f9f9;
+          min-height: 100vh;
         }
         .container {
           max-width: 1200px;
           margin: 0 auto;
+          background: #fff;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         h2 {
           text-align: center;
-          margin-bottom: 20px;
+          margin-bottom: 30px;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          color: #2c3e50;
         }
         .filter-container {
           display: flex;
           justify-content: center;
           gap: 20px;
-          margin-bottom: 20px;
+          margin-bottom: 30px;
           flex-wrap: wrap;
         }
         .filter-item {
           display: flex;
           align-items: center;
           gap: 8px;
+        }
+        .filter-item label {
+          font-weight: bold;
+          color: #2c3e50;
+        }
+        select {
+          padding: 6px 10px;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          font-size: 14px;
         }
         .chart-container {
           margin-bottom: 40px;
@@ -334,34 +371,36 @@ const DoctorDashboard = () => {
           border: 1px solid #ddd;
           padding: 12px;
           text-align: left;
+          font-size: 14px;
         }
         .table th {
-          background-color: #f4f4f4;
+          background-color: #ecf0f1;
+          color: #2c3e50;
         }
         .table tr:nth-child(even) {
-          background-color: #f9f9f9;
+          background-color: #f2f2f2;
         }
         .table tr:hover {
-          background-color: #f1f1f1;
+          background-color: #e9e9e9;
         }
         .button-container {
           text-align: center;
           margin-top: 30px;
         }
         .btn {
-          background-color: #4CAF50; /* Green */
+          background-color: #3498db;
           border: none;
           color: white;
           padding: 12px 24px;
-          text-align: center;
-          text-decoration: none;
-          display: inline-block;
           font-size: 16px;
           cursor: pointer;
           border-radius: 4px;
+          display: inline-flex;
+          align-items: center;
+          transition: background-color 0.3s ease;
         }
         .btn:hover {
-          background-color: #45a049;
+          background-color: #2980b9;
         }
         @media (max-width: 768px) {
           .table th,
