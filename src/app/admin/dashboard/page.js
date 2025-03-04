@@ -136,12 +136,12 @@ const Dashboard = () => {
       count: null
     },
     // Uncomment if needed
-    // { 
-    //   title: 'Financial Overview', 
-    //   path: '/admin/financialoverview',
-    //   icon: <FaMoneyCheckAlt size={40} color="#0d6efd" />,
-    //   count: null
-    // },
+    { 
+      title: 'Manage Priscription', 
+      path: '/admin/medicine',
+      icon: <FaMoneyCheckAlt size={40} color="#0d6efd" />,
+      count: null
+    },
   ];
 
   return (

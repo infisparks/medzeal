@@ -124,6 +124,32 @@ const DoctorPrescription = () => {
     });
   }, [appointments, searchTerm]);
 
+  // Compute previous medicine names for the selected patient
+  const previousMedicineNames = useMemo(() => {
+    if (!selectedAppointment) return [];
+    const patientHistory = allAppointments.filter(
+      (a) => a.phone === selectedAppointment.phone && a.presciption
+    );
+    const medsSet = new Set();
+    patientHistory.forEach((a) => {
+      if (a.presciption.medicines && Array.isArray(a.presciption.medicines)) {
+        a.presciption.medicines.forEach((med) => {
+          if (med.name && med.name.trim() !== "") {
+            medsSet.add(med.name);
+          }
+        });
+      }
+    });
+    return Array.from(medsSet);
+  }, [selectedAppointment, allAppointments]);
+
+  // Handler for selecting a suggestion
+  const handleSelectSuggestion = (index, suggestion) => {
+    const newMedicines = [...medicines];
+    newMedicines[index].name = suggestion;
+    setMedicines(newMedicines);
+  };
+
   // --- Prescription Logic ---
   const handleSelectAppointmentForAdd = (appointment) => {
     setSelectedAppointment(appointment);
@@ -521,7 +547,8 @@ const DoctorPrescription = () => {
                             </button>
                           )}
                         </div>
-                        <div className="mb-2">
+                        {/* Medicine Name with Autocomplete */}
+                        <div className="mb-2" style={{ position: "relative" }}>
                           <label className="form-label">
                             Medicine Name:
                           </label>
@@ -534,6 +561,39 @@ const DoctorPrescription = () => {
                             }
                             placeholder="Enter medicine name"
                           />
+                          {medicine.name &&
+                            previousMedicineNames.filter((sug) =>
+                              sug.toLowerCase().startsWith(medicine.name.toLowerCase())
+                            ).length > 0 && (
+                              <ul
+                                style={{
+                                  position: "absolute",
+                                  top: "100%",
+                                  left: 0,
+                                  right: 0,
+                                  background: "#fff",
+                                  border: "1px solid #ccc",
+                                  zIndex: 10,
+                                  listStyle: "none",
+                                  margin: 0,
+                                  padding: 0,
+                                }}
+                              >
+                                {previousMedicineNames
+                                  .filter((sug) =>
+                                    sug.toLowerCase().startsWith(medicine.name.toLowerCase())
+                                  )
+                                  .map((suggestion, idx) => (
+                                    <li
+                                      key={idx}
+                                      style={{ padding: "8px", cursor: "pointer" }}
+                                      onClick={() => handleSelectSuggestion(index, suggestion)}
+                                    >
+                                      {suggestion}
+                                    </li>
+                                  ))}
+                              </ul>
+                            )}
                         </div>
                         <div className="mb-2">
                           <label className="form-label">

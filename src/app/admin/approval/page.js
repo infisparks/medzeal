@@ -85,7 +85,31 @@ const Approval = () => {
     }));
   };
 
-  const handleApprove = async (id, uid, email, appointmentDate, appointmentTime, doctor, name) => { 
+  // New function to send a professional WhatsApp message with review link and offer image
+  const sendApprovalWhatsAppMessage = async (phone, name, appointmentDate, appointmentTime, doctor) => {
+    const message = `Hello ${name},\n\nYour appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been approved.\n\nThank you for choosing Medzeal. We always strive for excellence in patient care and your feedback is invaluable. Please take a moment to share your experience by leaving a review here:\nhttps://search.google.com/local/writereview?placeid=ChIJMWEa_L56CEERqw34V0Y4kgo&source=g.page.m.ia._&laa=nmx-review-solicitation-ia2\n\nBest regards,\nTeam Medzeal`;
+    
+    const payload = {
+      token: "99583991572",
+      number: `91${phone}`,
+      imageUrl: "https://raw.githubusercontent.com/infisparks/images/refs/heads/main/offer.png",
+      caption: message
+    };
+    
+    try {
+      await fetch("https://wa.medblisss.com/send-image-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload)
+      });
+    } catch(error) {
+      console.error("Error sending approval WhatsApp message:", error);
+    }
+  };
+
+  const handleApprove = async (id, uid, email, appointmentDate, appointmentTime, doctor, name, phone) => { 
     const appointmentRef = ref(db, `appointments/${uid}/${id}`); 
     const { paymentMethod = "", price = "", consultantAmount } = appointmentUpdates[id] || {}; 
 
@@ -103,7 +127,9 @@ const Approval = () => {
         ...(consultantAmount ? { consultantAmount: parseFloat(consultantAmount) } : {})
       });
       
-      // Optionally, you could send a confirmation email or WhatsApp message here
+      // After approval update, send the professional WhatsApp message
+      await sendApprovalWhatsAppMessage(phone, name, appointmentDate, appointmentTime, doctor);
+
       alert("Appointment approved successfully.");
     } catch (error) {
       console.error("Error updating approval:", error);
@@ -112,9 +138,9 @@ const Approval = () => {
   };
 
   const handleSendCustomWhatsApp = (phone, name, appointmentDate, appointmentTime, doctor) => {
-    const customMessage = `Hello ${name}, your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been confirmed. Please let us know if you need further assistance.`;
-    const whatsappLink = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(customMessage)}`;
-    window.open(whatsappLink, '_blank');
+    const customMessage = `Hello ${name}, your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been Done. Please let us know if you need further assistance.`; 
+    const whatsappLink = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(customMessage)}`; 
+    window.open(whatsappLink, '_blank'); 
   };
 
   return ( 
@@ -153,8 +179,8 @@ const Approval = () => {
           > 
             <option value="">All Months</option> 
             {Array.from({ length: 12 }, (_, i) => ( 
-              <option key={i} value={String(i + 1).padStart(2, '0')}>
-                {new Date(0, i).toLocaleString('default', { month: 'long' })}
+              <option key={i} value={String(i + 1).padStart(2, '0')}> 
+                {new Date(0, i).toLocaleString('default', { month: 'long' })} 
               </option> 
             ))} 
           </select> 
@@ -244,7 +270,7 @@ const Approval = () => {
                   
                   <div className="btn-group d-flex justify-content-between mt-3">
                     <button 
-                      onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name)} 
+                      onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name, phone)} 
                       className="btn btn-success btn-sm d-flex align-items-center"
                     > 
                       <FaCheck className="me-2" /> Approve 
