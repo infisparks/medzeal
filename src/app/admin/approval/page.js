@@ -104,7 +104,7 @@ Team Medzeal
     const payload = {
       token: "99583991572",
       number: `91${phone}`,
-      imageUrl: "https://raw.githubusercontent.com/infisparks/images/refs/heads/main/offer.png",
+      imageUrl: "https://raw.githubusercontent.com/infisparks/images/refs/heads/main/feedback.png",
       caption: message
     };
     
