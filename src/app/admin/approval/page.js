@@ -87,7 +87,19 @@ const Approval = () => {
 
   // New function to send a professional WhatsApp message with review link and offer image
   const sendApprovalWhatsAppMessage = async (phone, name, appointmentDate, appointmentTime, doctor) => {
-    const message = `Hello ${name},\n\nYour appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been approved.\n\nThank you for choosing Medzeal. We always strive for excellence in patient care and your feedback is invaluable. Please take a moment to share your experience by leaving a review here:\nhttps://search.google.com/local/writereview?placeid=ChIJMWEa_L56CEERqw34V0Y4kgo&source=g.page.m.ia._&laa=nmx-review-solicitation-ia2\n\nBest regards,\nTeam Medzeal`;
+    const message = `Hello ${name},
+
+Your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been approved.
+
+Thank you for choosing Medzeal. We always strive for excellence in patient care and your feedback is invaluable. Please take a moment to share your experience by leaving a review here:
+https://search.google.com/local/writereview?placeid=ChIJMWEa_L56CEERqw34V0Y4kgo&source=g.page.m.ia._&laa=nmx-review-solicitation-ia2
+
+For further appointments, you can book directly from our website:
+https://www.medzeal.in/appointment
+
+Best regards,
+Team Medzeal
+`;
     
     const payload = {
       token: "99583991572",
