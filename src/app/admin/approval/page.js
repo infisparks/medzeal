@@ -89,7 +89,7 @@ const Approval = () => {
   const sendApprovalWhatsAppMessage = async (phone, name, appointmentDate, appointmentTime, doctor) => {
     const message = `Hello ${name},
 
-Your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been approved.
+Your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been Done.
 
 Thank you for choosing Medzeal. We always strive for excellence in patient care and your feedback is invaluable. Please take a moment to share your experience by leaving a review here:
 https://search.google.com/local/writereview?placeid=ChIJMWEa_L56CEERqw34V0Y4kgo&source=g.page.m.ia._&laa=nmx-review-solicitation-ia2
