@@ -17,7 +17,7 @@ import Team from "./Home/Team";
 import Testimonial from "./Home/Testimonials";
 import WhyChoose from "./Home/WhyChoose";
 import BookingPopup from "@/components/BookingPopup"; // adjust the path as needed
-
+import Booknow from"@/components/Booknow"
 export default function Home() {
   const [showBookingPopup, setShowBookingPopup] = useState(false);
 
@@ -33,6 +33,7 @@ export default function Home() {
       <Header />
       <Hero />
       <Schedule />
+      {/* <Booknow/> */}
       <Appoinment />
       {/* <Features /> */}
       {/* <Funfact /> */}
