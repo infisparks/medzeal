@@ -757,7 +757,7 @@ const DoctorPrescription = () => {
             style={{
               width: "210mm",
               minHeight: "297mm",
-              padding: "20mm",
+              padding: "30mm 20mm 20mm 20mm", // top, right, bottom, left
               backgroundImage: `url(${letterhead.src})`,
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
@@ -775,6 +775,7 @@ const DoctorPrescription = () => {
                 display: "flex",
                 justifyContent: "space-between",
                 marginBottom: "10mm",
+                // marginTop:"20mm",
               }}
             >
               <div style={{ width: "45%" }}>
