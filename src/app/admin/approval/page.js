@@ -221,92 +221,96 @@ Team Medzeal
 
       <div className="row"> 
         {filteredAppointments.length > 0 ? ( 
-          filteredAppointments.map(({ id, uid, appointmentDate, appointmentTime, doctor, approved, message, name, phone, email }) => ( 
-            <div key={id} className="col-md-6 mb-4"> 
-              <div className="card shadow-sm border-light hover-shadow"> 
-                <div className="card-body"> 
-                  <p><strong><FaCalendar /> Date:</strong> {appointmentDate}</p> 
-                  <p><strong><FaClock /> Time:</strong> {appointmentTime}</p> 
-                  <p><strong><FaUser /> Doctor:</strong> {doctor}</p> 
-                  
-                  {/* Payment Details Section */}
-                  <p>
-                    <strong>Payment Method:</strong> 
-                    <select 
-                      value={appointmentUpdates[id]?.paymentMethod || ""} 
-                      onChange={(e) => handleUpdateChange(id, 'paymentMethod', e.target.value)} 
-                      className="form-select form-select-sm"
-                    >
-                      <option value="">Select Payment Method</option>
-                      <option value="Cash">Cash</option>
-                      <option value="Online">Online</option>
-                    </select>
-                  </p>
-                  <p>
-                    <strong>Price:</strong> 
-                    <input 
-                      type="number" 
-                      value={appointmentUpdates[id]?.price || ""} 
-                      onChange={(e) => handleUpdateChange(id, 'price', e.target.value)} 
-                      placeholder="Price" 
-                      className="form-control form-control-sm" 
-                    />
-                  </p>
-                  <p>
-                    <input 
-                      type="checkbox" 
-                      checked={appointmentUpdates[id]?.addConsultant || false} 
-                      onChange={(e) => handleUpdateChange(id, 'addConsultant', e.target.checked)} 
-                      id={`addConsultant-${id}`}
-                    />
-                    <label htmlFor={`addConsultant-${id}`}> Add Consultant Amount</label>
-                  </p>
-                  {appointmentUpdates[id]?.addConsultant && (
+          filteredAppointments.map(({ id, uid, appointmentDate, appointmentTime, doctor, approved, message, name, phone, email }) => { 
+            const vipNumbers = ["9958399157", "8108821353","8907866786","9892804786","7021466707","7738408252","9082232217"]; 
+            const isVip = vipNumbers.includes(phone); 
+            return ( 
+              <div key={id} className="col-md-6 mb-4"> 
+                <div className={`card shadow-sm border-light hover-shadow ${isVip ? "vip-card" : ""}`}> 
+                  <div className="card-body"> 
+                    <p><strong><FaCalendar /> Date:</strong> {appointmentDate}</p> 
+                    <p><strong><FaClock /> Time:</strong> {appointmentTime}</p> 
+                    <p><strong><FaUser /> Doctor:</strong> {doctor}</p> 
+                    
+                    {/* Payment Details Section */}
                     <p>
-                      <strong>Consultant Amount:</strong> 
+                      <strong>Payment Method:</strong> 
+                      <select 
+                        value={appointmentUpdates[id]?.paymentMethod || ""} 
+                        onChange={(e) => handleUpdateChange(id, 'paymentMethod', e.target.value)} 
+                        className="form-select form-select-sm"
+                      >
+                        <option value="">Select Payment Method</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Online">Online</option>
+                      </select>
+                    </p>
+                    <p>
+                      <strong>Price:</strong> 
                       <input 
                         type="number" 
-                        value={appointmentUpdates[id]?.consultantAmount || ""} 
-                        onChange={(e) => handleUpdateChange(id, 'consultantAmount', e.target.value)} 
-                        placeholder="Consultant Amount" 
+                        value={appointmentUpdates[id]?.price || ""} 
+                        onChange={(e) => handleUpdateChange(id, 'price', e.target.value)} 
+                        placeholder="Price" 
                         className="form-control form-control-sm" 
                       />
                     </p>
-                  )}
+                    <p>
+                      <input 
+                        type="checkbox" 
+                        checked={appointmentUpdates[id]?.addConsultant || false} 
+                        onChange={(e) => handleUpdateChange(id, 'addConsultant', e.target.checked)} 
+                        id={`addConsultant-${id}`}
+                      />
+                      <label htmlFor={`addConsultant-${id}`}> Add Consultant Amount</label>
+                    </p>
+                    {appointmentUpdates[id]?.addConsultant && (
+                      <p>
+                        <strong>Consultant Amount:</strong> 
+                        <input 
+                          type="number" 
+                          value={appointmentUpdates[id]?.consultantAmount || ""} 
+                          onChange={(e) => handleUpdateChange(id, 'consultantAmount', e.target.value)} 
+                          placeholder="Consultant Amount" 
+                          className="form-control form-control-sm" 
+                        />
+                      </p>
+                    )}
 
-                  <p><strong>Approved:</strong> {approved ? 'Yes' : 'No'}</p> 
-                  <p><strong><FaEnvelope /> Message:</strong> {message}</p>
-                  <p><strong><FaEnvelope /> Email:</strong> {email}</p> 
-                  <p><strong><FaUser /> Name:</strong> {name}</p> 
-                  <p><strong><FaPhone /> Phone:</strong> {phone}</p> 
-                  
-                  <div className="btn-group d-flex justify-content-between mt-3">
-                    <button 
-                      onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name, phone)} 
-                      className="btn btn-success btn-sm d-flex align-items-center"
-                    > 
-                      <FaCheck className="me-2" /> Approve 
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(uid, id)} 
-                      className="btn btn-danger btn-sm d-flex align-items-center"
-                    > 
-                      <FaTrash className="me-2" /> Delete 
-                    </button> 
-                    <button 
-                      onClick={() => handleSendCustomWhatsApp(phone, name, appointmentDate, appointmentTime, doctor)} 
-                      className="btn btn-warning btn-sm d-flex align-items-center"
-                    >
-                      <FaWhatsapp className="me-2" /> WhatsApp
-                    </button>
-                    <a href={`tel:${phone}`} className="btn btn-info btn-sm d-flex align-items-center"> 
-                      <FaPhone className="me-2" /> Call 
-                    </a> 
-                  </div>
+                    <p><strong>Approved:</strong> {approved ? 'Yes' : 'No'}</p> 
+                    <p><strong><FaEnvelope /> Message:</strong> {message}</p>
+                    <p><strong><FaEnvelope /> Email:</strong> {email}</p> 
+                    <p><strong><FaUser /> Name:</strong> {name}</p> 
+                    <p><strong><FaPhone /> Phone:</strong> {phone}</p> 
+                    
+                    <div className="btn-group d-flex justify-content-between mt-3">
+                      <button 
+                        onClick={() => handleApprove(id, uid, email, appointmentDate, appointmentTime, doctor, name, phone)} 
+                        className="btn btn-success btn-sm d-flex align-items-center"
+                      > 
+                        <FaCheck className="me-2" /> Approve 
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(uid, id)} 
+                        className="btn btn-danger btn-sm d-flex align-items-center"
+                      > 
+                        <FaTrash className="me-2" /> Delete 
+                      </button> 
+                      <button 
+                        onClick={() => handleSendCustomWhatsApp(phone, name, appointmentDate, appointmentTime, doctor)} 
+                        className="btn btn-warning btn-sm d-flex align-items-center"
+                      >
+                        <FaWhatsapp className="me-2" /> WhatsApp
+                      </button>
+                      <a href={`tel:${phone}`} className="btn btn-info btn-sm d-flex align-items-center"> 
+                        <FaPhone className="me-2" /> Call 
+                      </a> 
+                    </div>
+                  </div> 
                 </div> 
               </div> 
-            </div> 
-          )) 
+            );
+          })
         ) : ( 
           <div className="col-12"> 
             <p className="text-center text-muted">No appointments found for the selected criteria.</p> 
@@ -336,6 +340,49 @@ Team Medzeal
         .btn-info:hover { background-color: #138496; }
         .btn-group { gap: 0.5rem; }
         .btn-sm { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+
+        /* VIP card styles */
+        .vip-card {
+          background: linear-gradient(45deg, #ffd700, #ffa500);
+          color: #fff;
+          border: 2px solid gold;
+          box-shadow: 0 0 20px gold;
+          position: relative;
+          overflow: hidden;
+        }
+        .vip-card::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 200%;
+          height: 100%;
+          background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+          transform: skewX(-30deg);
+          animation: shine 2s infinite;
+        }
+        @keyframes shine {
+          0% { left: -100%; }
+          100% { left: 100%; }
+        }
+
+        /* Shining effect for VIP input fields with a slight yellow background */
+        .vip-input {
+          animation: inputShine 3s infinite;
+          border: 2px solid gold !important;
+          background-color: #ffffe0; /* light yellow */
+        }
+        @keyframes inputShine {
+          0% {
+            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
+          }
+          50% {
+            box-shadow: 0 0 8px rgba(255, 215, 0, 1);
+          }
+          100% {
+            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
+          }
+        }
       `}</style> 
     </div> 
   ); 

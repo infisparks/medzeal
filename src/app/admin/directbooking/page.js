@@ -51,6 +51,10 @@ export default function Staff() {
   const [doctors, setDoctors] = useState([]);
   const [emailError, setEmailError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [previousAppointments, setPreviousAppointments] = useState([]);
+  const [nameSuggestions, setNameSuggestions] = useState([]);
+  // Controls confetti blast effect
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const subServices = {
     Physiotherapy: [
@@ -78,8 +82,23 @@ export default function Staff() {
     ],
   };
 
+  // Define multiple VIP numbers (10-digit strings)
+  const VIP_NUMBERS = ["9958399157", "8108821353","8907866786","9892804786","7021466707","7738408252","9082232217"];
+  // Check if the entered phone is in the VIP numbers array
+  const isVip = VIP_NUMBERS.includes(userDetails.phone);
+
+  // Trigger confetti blast if VIP number is entered
+  useEffect(() => {
+    if (isVip) {
+      setShowConfetti(true);
+      const timer = setTimeout(() => setShowConfetti(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isVip]);
+
   useEffect(() => {
     fetchDoctors();
+    fetchPreviousAppointments();
   }, []);
 
   const fetchDoctors = async () => {
@@ -95,16 +114,55 @@ export default function Staff() {
     }
   };
 
+  const fetchPreviousAppointments = async () => {
+    try {
+      const appointmentsRef = ref(db, "appointments/test");
+      const snapshot = await get(appointmentsRef);
+      if (snapshot.exists()) {
+        const appointmentsData = snapshot.val();
+        const appointmentsArray = Object.values(appointmentsData);
+        setPreviousAppointments(appointmentsArray);
+      }
+    } catch (error) {
+      console.error("Error fetching previous appointments:", error);
+    }
+  };
+
+  const handleNameChange = (e) => {
+    const input = e.target.value;
+    setUserDetails({ ...userDetails, name: input });
+    if (input.trim() === "") {
+      setNameSuggestions([]);
+      return;
+    }
+    const filtered = previousAppointments.filter((appointment) =>
+      appointment.name.toLowerCase().startsWith(input.toLowerCase())
+    );
+    setNameSuggestions(filtered);
+  };
+
+  const handleSelectSuggestion = (suggestion) => {
+    setUserDetails({
+      name: suggestion.name || "",
+      email: suggestion.email || "",
+      phone: suggestion.phone || "",
+      treatment: suggestion.treatment || "",
+      subCategory: suggestion.subCategory || "",
+      doctor: suggestion.doctor || "",
+      appointmentDate: getCurrentDate(),
+      appointmentTime: getCurrentTime(),
+      message: suggestion.message || "",
+    });
+    setNameSuggestions([]);
+  };
+
   const handleEmailChange = (e) => {
     const email = e.target.value;
     setUserDetails({ ...userDetails, email });
-
     if (email.trim() === "") {
       setEmailError("");
       return;
     }
-
-    // Simple email regex for validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setEmailError("Please enter a valid email address.");
@@ -115,7 +173,6 @@ export default function Staff() {
 
   const handlePhoneChange = (e) => {
     const phone = e.target.value;
-    // Allow only digits
     if (!/^\d*$/.test(phone)) return;
     setUserDetails({ ...userDetails, phone });
     if (phone.length !== 10) {
@@ -128,7 +185,6 @@ export default function Staff() {
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    // Check for errors before submission
     if (emailError || phoneError) {
       alert("Please fix the errors in the form before submitting.");
       return;
@@ -145,7 +201,7 @@ export default function Staff() {
       appointmentDate: formData.get("date"),
       appointmentTime: formatTimeTo12Hour(formData.get("time")),
       message: formData.get("message"),
-      approved: false, // Now set to false by default
+      approved: false,
       attended: true,
       uid: "test",
     };
@@ -155,10 +211,8 @@ export default function Staff() {
       await set(newAppointmentRef, appointmentData);
       alert("Appointment booked successfully!");
 
-      // Construct a professional message for the appointment
       let message = `Dear ${appointmentData.name},\n\nYour appointment has been confirmed. Please find the details below:\n• Treatment: ${appointmentData.treatment}\n• Service: ${appointmentData.subCategory}\n• Doctor: ${appointmentData.doctor}\n• Date: ${appointmentData.appointmentDate}\n• Time: ${appointmentData.appointmentTime}\n\nThank you for choosing our services. We look forward to serving you.`;
 
-      // Append additional details if available
       if (appointmentData.message && appointmentData.message.trim() !== "") {
         message += `\n• Note: ${appointmentData.message}`;
       }
@@ -166,7 +220,6 @@ export default function Staff() {
         message += `\n• Email: ${appointmentData.email}`;
       }
 
-      // Use the API to send a WhatsApp message
       const apiResponse = await fetch("https://wa.medblisss.com/send-text", {
         method: "POST",
         headers: {
@@ -174,7 +227,7 @@ export default function Staff() {
         },
         body: JSON.stringify({
           token: "99583991572",
-          number: "91" + appointmentData.phone, // Prepend country code "91"
+          number: "91" + appointmentData.phone,
           message: message,
         }),
       });
@@ -182,8 +235,6 @@ export default function Staff() {
       if (!apiResponse.ok) {
         throw new Error("API call failed");
       }
-
-      // Optionally, handle API response data here if needed
       setUserDetails(initialUserDetails);
     } catch (error) {
       console.error("Error during appointment booking:", error);
@@ -191,6 +242,7 @@ export default function Staff() {
     }
   };
 
+  // Update input and select styles to include a subtle background tint when VIP is active
   const inputStyle = {
     width: "100%",
     padding: "12px 15px",
@@ -198,16 +250,55 @@ export default function Staff() {
     border: "1px solid #ccc",
     fontSize: "16px",
     transition: "border-color 0.3s, box-shadow 0.3s",
+    backgroundColor: isVip ? "#fff8dc" : "#fff",
   };
 
   const selectStyle = {
     ...inputStyle,
     appearance: "none",
-    backgroundImage: "url('/icons/select-arrow.svg')", // Optional: Add a custom arrow icon
+    backgroundImage: "url('/icons/select-arrow.svg')",
     backgroundRepeat: "no-repeat",
     backgroundPosition: "right 15px center",
     backgroundSize: "12px",
   };
+
+  // Style for the appointment details card
+  const cardStyle = {
+    backgroundColor: isVip ? "transparent" : "#ffffff",
+    color: isVip ? "#fff" : "#333333",
+    padding: "20px",
+    borderRadius: "10px",
+    boxShadow: isVip ? "none" : "0 4px 12px rgba(0, 0, 0, 0.1)",
+    marginBottom: "20px",
+    transition: "transform 0.3s, box-shadow 0.3s",
+    position: "relative",
+    overflow: "hidden",
+  };
+
+  // Style for the entire form container
+  const formContainerStyle = {
+    background: isVip ? "linear-gradient(45deg, #ffd700, #ffa500)" : "#ffffff",
+    padding: "20px",
+    borderRadius: "10px",
+    boxShadow: isVip ? "0 0 20px gold" : "0 4px 12px rgba(0, 0, 0, 0.1)",
+    transition: "transform 0.3s, box-shadow 0.3s",
+    position: "relative",
+    overflow: "hidden",
+  };
+
+  // Define a set of confetti pieces with direction multipliers
+  const confettiPieces = [
+    { x: 1, y: 1 },
+    { x: -1, y: 1 },
+    { x: 1, y: -1 },
+    { x: -1, y: -1 },
+    { x: 0.5, y: 1 },
+    { x: -0.5, y: 1 },
+    { x: 1, y: 0.5 },
+    { x: -1, y: 0.5 },
+    { x: 0.5, y: -1 },
+    { x: -0.5, y: -1 },
+  ];
 
   return (
     <>
@@ -222,16 +313,10 @@ export default function Staff() {
           <div className="row">
             {/* Form Section */}
             <div className="col-lg-7 col-md-12 col-12">
-              <div className="appointment-inner">
+              <div className="appointment-inner" style={formContainerStyle}>
                 {/* Title */}
                 <div className="title" style={{ marginBottom: "30px" }}>
-                  <h3
-                    style={{
-                      color: "#1E3A8A",
-                      fontSize: "28px",
-                      marginBottom: "10px",
-                    }}
-                  >
+                  <h3 style={{ color: "#1E3A8A", fontSize: "28px", marginBottom: "10px" }}>
                     Book your appointment
                   </h3>
                   <p style={{ color: "#555555", fontSize: "16px" }}>
@@ -239,35 +324,40 @@ export default function Staff() {
                   </p>
                 </div>
 
-                {/* User Details Card */}
+                {/* Appointment Details Card */}
                 <div
-                  className="user-details-card"
-                  style={{
-                    backgroundColor: "#ffffff",
-                    color: "#333333",
-                    padding: "20px",
-                    borderRadius: "10px",
-                    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                    marginBottom: "20px",
-                    transition: "transform 0.3s, box-shadow 0.3s",
-                  }}
+                  className={`user-details-card ${isVip ? "vip-card" : ""}`}
+                  style={cardStyle}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = "translateY(-5px)";
-                    e.currentTarget.style.boxShadow =
-                      "0 8px 16px rgba(0, 0, 0, 0.2)";
+                    e.currentTarget.style.boxShadow = isVip
+                      ? "none"
+                      : "0 8px 16px rgba(0, 0, 0, 0.2)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = "translateY(0)";
-                    e.currentTarget.style.boxShadow =
-                      "0 4px 12px rgba(0, 0, 0, 0.1)";
+                    e.currentTarget.style.boxShadow = isVip
+                      ? "none"
+                      : "0 4px 12px rgba(0, 0, 0, 0.1)";
                   }}
                 >
-                  <h4
-                    style={{
-                      borderBottom: "2px solid #1E3A8A",
-                      paddingBottom: "10px",
-                    }}
-                  >
+                  {isVip && <div className="vip-badge">VIP Verified</div>}
+                  {showConfetti && (
+                    <div className="confetti-container">
+                      {confettiPieces.map((piece, index) => (
+                        <div
+                          key={index}
+                          className="confetti-piece"
+                          style={{
+                            "--x": piece.x,
+                            "--y": piece.y,
+                            animationDelay: `${Math.random() * 0.5}s`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <h4 style={{ borderBottom: "2px solid #1E3A8A", paddingBottom: "10px" }}>
                     Appointment Details
                   </h4>
                   <p>
@@ -283,8 +373,7 @@ export default function Staff() {
                     <strong>Treatment:</strong> {userDetails.treatment || "N/A"}
                   </p>
                   <p>
-                    <strong>Subcategory:</strong>{" "}
-                    {userDetails.subCategory || "N/A"}
+                    <strong>Subcategory:</strong> {userDetails.subCategory || "N/A"}
                   </p>
                   <p>
                     <strong>Doctor:</strong> {userDetails.doctor || "N/A"}
@@ -303,9 +392,9 @@ export default function Staff() {
                 {/* Form */}
                 <form className="form" onSubmit={handleSubmit}>
                   <div className="row g-4">
-                    {/* Name */}
+                    {/* Name with Autocomplete */}
                     <div className="col-lg-6 col-md-6 col-12">
-                      <div className="form-group">
+                      <div className="form-group" style={{ position: "relative" }}>
                         <label htmlFor="name" className="visually-hidden">
                           Name
                         </label>
@@ -315,13 +404,44 @@ export default function Staff() {
                           type="text"
                           placeholder="Name"
                           value={userDetails.name}
-                          onChange={(e) =>
-                            setUserDetails({ ...userDetails, name: e.target.value })
-                          }
+                          onChange={handleNameChange}
                           required
                           style={inputStyle}
+                          className={isVip ? "vip-input" : ""}
                           aria-required="true"
                         />
+                        {nameSuggestions.length > 0 && (
+                          <ul
+                            style={{
+                              listStyleType: "none",
+                              padding: 0,
+                              margin: 0,
+                              border: "1px solid #ccc",
+                              maxHeight: "150px",
+                              overflowY: "auto",
+                              position: "absolute",
+                              top: "100%",
+                              left: 0,
+                              right: 0,
+                              backgroundColor: "#fff",
+                              zIndex: 1000,
+                            }}
+                          >
+                            {nameSuggestions.map((suggestion, index) => (
+                              <li
+                                key={index}
+                                onClick={() => handleSelectSuggestion(suggestion)}
+                                style={{
+                                  padding: "8px",
+                                  cursor: "pointer",
+                                  borderBottom: "1px solid #eee",
+                                }}
+                              >
+                                {suggestion.name} {suggestion.phone ? ` - ${suggestion.phone}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
 
@@ -342,6 +462,7 @@ export default function Staff() {
                             ...inputStyle,
                             borderColor: emailError ? "#e74c3c" : "#ccc",
                           }}
+                          className={isVip ? "vip-input" : ""}
                           aria-invalid={emailError ? "true" : "false"}
                         />
                         {emailError && (
@@ -370,6 +491,7 @@ export default function Staff() {
                             ...inputStyle,
                             borderColor: phoneError ? "#e74c3c" : "#ccc",
                           }}
+                          className={isVip ? "vip-input" : ""}
                           aria-required="true"
                           aria-invalid={phoneError ? "true" : "false"}
                         />
@@ -480,10 +602,7 @@ export default function Staff() {
                           type="date"
                           value={userDetails.appointmentDate}
                           onChange={(e) =>
-                            setUserDetails({
-                              ...userDetails,
-                              appointmentDate: e.target.value,
-                            })
+                            setUserDetails({ ...userDetails, appointmentDate: e.target.value })
                           }
                           required
                           style={inputStyle}
@@ -505,10 +624,7 @@ export default function Staff() {
                           placeholder="Time"
                           value={userDetails.appointmentTime}
                           onChange={(e) =>
-                            setUserDetails({
-                              ...userDetails,
-                              appointmentTime: e.target.value,
-                            })
+                            setUserDetails({ ...userDetails, appointmentTime: e.target.value })
                           }
                           required
                           style={inputStyle}
@@ -529,10 +645,7 @@ export default function Staff() {
                           placeholder="Write Your Message Here....."
                           value={userDetails.message}
                           onChange={(e) =>
-                            setUserDetails({
-                              ...userDetails,
-                              message: e.target.value,
-                            })
+                            setUserDetails({ ...userDetails, message: e.target.value })
                           }
                           style={{
                             ...inputStyle,
@@ -559,21 +672,18 @@ export default function Staff() {
                             borderRadius: "5px",
                             cursor: "pointer",
                             boxShadow: "0 4px 6px rgba(30, 58, 138, 0.3)",
-                            transition:
-                              "background-color 0.3s, box-shadow 0.3s, transform 0.2s",
+                            transition: "background-color 0.3s, box-shadow 0.3s, transform 0.2s",
                             fontSize: "16px",
                             fontWeight: "600",
                           }}
                           onMouseOver={(e) => {
                             e.target.style.backgroundColor = "#3B82F6";
-                            e.target.style.boxShadow =
-                              "0 6px 8px rgba(59, 130, 246, 0.4)";
+                            e.target.style.boxShadow = "0 6px 8px rgba(59, 130, 246, 0.4)";
                             e.target.style.transform = "translateY(-2px)";
                           }}
                           onMouseOut={(e) => {
                             e.target.style.backgroundColor = "#1E3A8A";
-                            e.target.style.boxShadow =
-                              "0 4px 6px rgba(30, 58, 138, 0.3)";
+                            e.target.style.boxShadow = "0 4px 6px rgba(30, 58, 138, 0.3)";
                             e.target.style.transform = "translateY(0)";
                           }}
                         >
@@ -593,6 +703,101 @@ export default function Staff() {
           </div>
         </div>
       </section>
+      <style jsx>{`
+        .vip-card {
+          background: linear-gradient(45deg, #ffd700, #ffa500);
+          color: #fff;
+          border: 2px solid gold;
+          box-shadow: 0 0 20px gold;
+        }
+        .vip-card::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 200%;
+          height: 100%;
+          background: linear-gradient(
+            120deg,
+            transparent,
+            rgba(255, 255, 255, 0.5),
+            transparent
+          );
+          transform: skewX(-30deg);
+          animation: shine 2s infinite;
+        }
+        @keyframes shine {
+          0% {
+            left: -100%;
+          }
+          100% {
+            left: 100%;
+          }
+        }
+        .vip-badge {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+          background: gold;
+          color: #fff;
+          padding: 5px 10px;
+          font-weight: bold;
+          border-radius: 5px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+          z-index: 1001;
+        }
+        .confetti-container {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          overflow: visible;
+        }
+        .confetti-piece {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 8px;
+          height: 8px;
+          background-color: gold;
+          opacity: 0;
+          transform: translate(-50%, -50%);
+          animation: confetti 1s forwards;
+        }
+        @keyframes confetti {
+          0% {
+            opacity: 1;
+            transform: translate(-50%, -50%) rotate(0deg);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(
+                calc(-50% + var(--x) * 150px),
+                calc(-50% + var(--y) * 150px)
+              )
+              rotate(720deg);
+          }
+        }
+        /* Shining effect for VIP input fields with a light yellow background */
+        .vip-input {
+          animation: inputShine 3s infinite;
+          border: 2px solid gold !important;
+          background-color: #fff8dc;
+        }
+        @keyframes inputShine {
+          0% {
+            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
+          }
+          50% {
+            box-shadow: 0 0 8px rgba(255, 215, 0, 1);
+          }
+          100% {
+            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
+          }
+        }
+      `}</style>
     </>
   );
 }
