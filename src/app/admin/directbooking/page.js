@@ -341,7 +341,7 @@ export default function Staff() {
                       : "0 4px 12px rgba(0, 0, 0, 0.1)";
                   }}
                 >
-                  {isVip && <div className="vip-badge">VIP Verified</div>}
+                  {isVip && <div className="vip-badge">ADMIN</div>}
                   {showConfetti && (
                     <div className="confetti-container">
                       {confettiPieces.map((piece, index) => (
