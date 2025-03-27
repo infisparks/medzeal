@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../../../lib/firebaseConfig';
-import { ref, onValue, off } from 'firebase/database';
+import { ref as dbRef, onValue, off } from 'firebase/database';
 import { 
   FaFileDownload, 
   FaMoneyBillWave, 
@@ -12,6 +12,7 @@ import {
 import { Spinner, Button, Table, Form } from 'react-bootstrap';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const TodayAttendedInvoice = () => {
   const [appointments, setAppointments] = useState([]);
@@ -24,19 +25,17 @@ const TodayAttendedInvoice = () => {
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
-  
+  const [sending, setSending] = useState(false);
+
   const invoiceRef = useRef();
 
   useEffect(() => {
-    // References
-    const appointmentsRef = ref(db, 'appointments');
-    const doctorsRef = ref(db, 'doctors');
+    const appointmentsRef = dbRef(db, 'appointments');
+    const doctorsRef = dbRef(db, 'doctors');
 
-    // Fetch Appointments
     const handleAppointments = (snapshot) => {
       const data = snapshot.val();
       const date = selectedDate;
-
       const attendedAppointments = [];
       let cashTotal = 0;
       let onlineTotal = 0;
@@ -64,11 +63,10 @@ const TodayAttendedInvoice = () => {
         });
       }
 
-      // Sort appointments by date and time ascending
       attendedAppointments.sort((a, b) => {
         const dateA = new Date(`${a.appointmentDate} ${a.appointmentTime}`);
         const dateB = new Date(`${b.appointmentDate} ${b.appointmentTime}`);
-        return dateA - dateB; // Ascending order
+        return dateA - dateB;
       });
 
       setAppointments(attendedAppointments);
@@ -78,22 +76,19 @@ const TodayAttendedInvoice = () => {
       setLoading(false);
     };
 
-    // Fetch Doctors
     const handleDoctors = (snapshot) => {
       const data = snapshot.val();
       setDoctors(data || {});
     };
 
-    // Attach Listeners
     onValue(appointmentsRef, handleAppointments);
     onValue(doctorsRef, handleDoctors);
 
-    // Cleanup Listeners on Unmount
     return () => {
       off(appointmentsRef, 'value', handleAppointments);
       off(doctorsRef, 'value', handleDoctors);
     };
-  }, [selectedDate]); // Re-run when selectedDate changes
+  }, [selectedDate]);
 
   const handleDateChange = (e) => {
     setLoading(true);
@@ -113,9 +108,93 @@ const TodayAttendedInvoice = () => {
       html2canvas: { scale: 0.5 },
       x: 0,
       y: 0,
-      width: 595 - 40, // A4 width minus margins
+      width: 595 - 40,
       windowWidth: invoice.scrollWidth,
     });
+  };
+
+  // Helper: Generate PDF blob from invoice content
+  const generatePDFBlob = () => {
+    return new Promise((resolve, reject) => {
+      const pdf = new jsPDF('p', 'pt', 'a4');
+      const invoice = invoiceRef.current;
+      pdf.html(invoice, {
+        callback: function (doc) {
+          try {
+            const blob = doc.output('blob');
+            resolve(blob);
+          } catch (error) {
+            reject(error);
+          }
+        },
+        margin: [20, 20, 20, 20],
+        autoPaging: 'text',
+        html2canvas: { scale: 0.5 },
+        x: 0,
+        y: 0,
+        width: 595 - 40,
+        windowWidth: invoice.scrollWidth,
+      });
+    });
+  };
+
+  // Upload PDF to Firebase Storage and send invoice via API with professional message
+  const handleSendInvoice = async () => {
+    setSending(true);
+    try {
+      const pdfBlob = await generatePDFBlob();
+      const storage = getStorage();
+      const fileName = `Invoice_${selectedDate}_${Date.now()}.pdf`;
+      const fileRef = storageRef(storage, `invoices/${fileName}`);
+      await uploadBytes(fileRef, pdfBlob);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      // Calculate grand total
+      const grandTotal = totalCash + totalOnline + totalConsultant;
+      // Format selected date for the message
+      const formattedDate = new Date(selectedDate).toLocaleDateString();
+
+      // Build a professional message with the calculations
+      const message = `
+Please find attached the invoice for the attended appointments on ${formattedDate}.
+
+The calculation details are as follows:
+- Total Cash: RS ${totalCash.toFixed(2)}
+- Total Online: RS ${totalOnline.toFixed(2)}
+- Total Consultant Amount: RS ${totalConsultant.toFixed(2)}
+- Grand Total: RS ${grandTotal.toFixed(2)}
+
+Thank you for your business.
+MedZeal`;
+
+      const payload = {
+        token: "99583991572",
+        number: "917738408252",
+        imageUrl: downloadUrl,
+        caption: message
+      };
+
+      const response = await fetch("https://wa.medblisss.com/send-image-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send invoice via API");
+      }
+      
+      const responseData = await response.json();
+      alert("Invoice sent successfully!");
+      console.log("API response:", responseData);
+    } catch (error) {
+      console.error("Error sending invoice:", error);
+      alert("There was an error sending the invoice. Please try again.");
+    } finally {
+      setSending(false);
+    }
   };
 
   if (loading) {
@@ -129,7 +208,7 @@ const TodayAttendedInvoice = () => {
 
   return (
     <div className="container mt-5 mb-5">
-      {/* Header and Download Button */}
+      {/* Header and Buttons */}
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4">
         <h1 className="display-4">
           <FaClinicMedical className="me-2 text-primary" />
@@ -152,18 +231,23 @@ const TodayAttendedInvoice = () => {
             <FaFileDownload className="me-2" />
             Download PDF
           </Button>
+          <Button 
+            variant="primary"
+            onClick={handleSendInvoice}
+            className="d-flex align-items-center mt-3 mt-md-0 ms-3"
+            disabled={sending}
+          >
+            {sending ? "Sending..." : "Send Invoice to Zainab Mam"}
+          </Button>
         </div>
       </div>
 
       {/* Invoice Content */}
       <div ref={invoiceRef} className="p-5 border rounded shadow-sm invoice-container">
-        {/* Company Header */}
         <div className="d-flex justify-content-between align-items-center mb-4">
-          {/* Logo */}
           <div>
             <img src="/img/medzeal.png" alt="Company Logo" className="logo" />
           </div>
-          {/* Company Details */}
           <div className="text-end company-details">
             <h3 className="text-primary">MedZeal</h3>
             <p>Email: <a href="mailto:medzealpcw@gmail.com">medzealpcw@gmail.com</a></p>
@@ -172,13 +256,11 @@ const TodayAttendedInvoice = () => {
           </div>
         </div>
 
-        {/* Invoice Title */}
         <div className="text-center mb-4">
           <h2 className="invoice-title">Report</h2>
           <p className="invoice-date">Date: {new Date(selectedDate).toLocaleDateString()}</p>
         </div>
 
-        {/* Invoice Number and Doctor Details */}
         <div className="d-flex justify-content-between mb-4">
           <div>
             <p><strong>Invoice Number:</strong> INV-{Date.now()}</p>
@@ -191,7 +273,6 @@ const TodayAttendedInvoice = () => {
           ) : null}
         </div>
 
-        {/* Appointments Table */}
         <Table bordered hover responsive className="invoice-table">
           <thead className="table-primary">
             <tr>
@@ -256,24 +337,21 @@ const TodayAttendedInvoice = () => {
           </tfoot>
         </Table>
 
-        {/* Footer */}
         <div className="text-center mt-4">
           <p>Thank you for choosing <strong>MedZeal</strong>! We appreciate your business.</p>
           <p className="mt-2">&copy; {new Date().getFullYear()} MedZeal. All rights reserved.</p>
         </div>
       </div>
 
-      {/* Scoped Styles */}
       <style jsx>{`
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-
         .invoice-container {
           font-family: 'Roboto', sans-serif;
           color: #333;
           background-color: #f9f9f9;
         }
         .logo {
-          width: 250px; /* Increased width to 250px */
+          width: 250px;
           height: auto;
         }
         .company-details p {
@@ -368,7 +446,6 @@ const TodayAttendedInvoice = () => {
             margin-top: 1rem !important;
           }
         }
-        /* Custom Styles */
         .border {
           border: 1px solid #dee2e6 !important;
         }
@@ -410,7 +487,6 @@ const TodayAttendedInvoice = () => {
           padding: 40px;
           background-color: #fff;
         }
-        /* Ensure the invoice content fits within the page margins */
         @media print {
           body {
             -webkit-print-color-adjust: exact !important;
