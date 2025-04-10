@@ -77,6 +77,8 @@ const SalesListPage = () => {
               ...saleObj,
             })
           );
+          // Sort the salesList so that the latest sale appears first.
+          salesList.sort((a, b) => new Date(b.date) - new Date(a.date));
           setSales(salesList);
         } else {
           setSales([]);
@@ -152,7 +154,7 @@ const SalesListPage = () => {
           (acc, product) => acc + (product.totalPrice || 0),
           0
         );
-        const discount = sale.discountAmount || 0; 
+        const discount = sale.discountAmount || 0;
         const finalAmount = sale.finalAmount || subtotal;
 
         sumFinal += finalAmount;
@@ -307,7 +309,8 @@ const SalesListPage = () => {
         if (matchedSaleProduct) {
           return {
             ...product,
-            quantityAvailable: product.quantityAvailable + matchedSaleProduct.quantity,
+            quantityAvailable:
+              product.quantityAvailable + matchedSaleProduct.quantity,
           };
         }
         return product;
@@ -343,11 +346,7 @@ const SalesListPage = () => {
       const productDetails = productsArray
         .map(
           (product) =>
-            `${product.productName} (Qty: ${
-              product.quantity
-            }, MRP: ₹${product.mrpPrice?.toLocaleString() || 0}, Total: ₹${(
-              product.totalPrice || 0
-            ).toLocaleString()})`
+            `${product.productName} (Qty: ${product.quantity}, MRP: ₹${product.mrpPrice?.toLocaleString() || 0}, Total: ₹${(product.totalPrice || 0).toLocaleString()})`
         )
         .join("\n");
 
