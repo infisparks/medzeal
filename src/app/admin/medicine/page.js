@@ -25,7 +25,7 @@ import {
 const DoctorPrescription = () => {
   const router = useRouter();
 
-  // State for all appointments and filtering
+  // States for appointments and filtering
   const [allAppointments, setAllAppointments] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [selectedDate, setSelectedDate] = useState(
@@ -48,11 +48,17 @@ const DoctorPrescription = () => {
   const [overallInstruction, setOverallInstruction] = useState("");
   const [prescriptionSaved, setPrescriptionSaved] = useState(false);
 
+  // New state for photos – can be File objects (new upload) or URL strings (existing)
+  const [prescriptionPhotos, setPrescriptionPhotos] = useState([]);
+
   // Previous history modal state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyModalItems, setHistoryModalItems] = useState([]);
 
-  // Refs for hidden PDF pages
+  // State for full screen photo modal
+  const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
+
+  // Refs for hidden PDF pages (used for PDF generation)
   const frontRef = useRef(null);
   const prescriptionRef = useRef(null);
 
@@ -165,6 +171,7 @@ const DoctorPrescription = () => {
     ]);
     setOverallInstruction("");
     setPrescriptionSaved(false);
+    setPrescriptionPhotos([]); // clear photos for new prescription
   };
 
   const handleSelectAppointmentForUpdate = (appointment) => {
@@ -189,6 +196,8 @@ const DoctorPrescription = () => {
         ]);
         setShowMedicineDetails(false);
       }
+      // Set existing photos (if any) so they appear in the preview/gallery
+      setPrescriptionPhotos(appointment.presciption.photos || []);
       setPrescriptionSaved(false);
     }
   };
@@ -208,13 +217,26 @@ const DoctorPrescription = () => {
         setMedicines([]);
         setShowMedicineDetails(false);
       }
+      // Load existing photos if any, but note these photos won't be rendered in the PDF
+      setPrescriptionPhotos(appointment.presciption.photos || []);
       setTimeout(() => {
         generateAndUploadPDF(false);
       }, 500);
     }
   };
 
-  // Medicine Details Functions
+  // --- Photo Handling Functions ---
+  const handlePhotoChange = (e) => {
+    const files = Array.from(e.target.files);
+    // Append new files to existing state (supports adding multiple times)
+    setPrescriptionPhotos((prev) => [...prev, ...files]);
+  };
+
+  const removePhoto = (index) => {
+    setPrescriptionPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // --- Medicine Details Functions ---
   const toggleMedicineDetails = () => {
     setShowMedicineDetails((prev) => !prev);
   };
@@ -248,7 +270,7 @@ const DoctorPrescription = () => {
     setMedicines(newMedicines);
   };
 
-  // --- PDF Generation & Compression ---
+  // --- PDF Generation (without attached photos) ---
   const generatePDFBlob = async () => {
     if (!frontRef.current || !prescriptionRef.current) return null;
     const pdf = new jsPDF("p", "mm", "a4");
@@ -266,7 +288,7 @@ const DoctorPrescription = () => {
       pdfHeightFront
     );
 
-    // Page 2: Prescription Details
+    // Page 2: Prescription Details (photos are NOT included)
     pdf.addPage();
     const canvasPrescription = await html2canvas(prescriptionRef.current, { scale: 1.5 });
     const pdfHeightPrescription = (canvasPrescription.height * pdfWidth) / canvasPrescription.width;
@@ -334,14 +356,39 @@ const DoctorPrescription = () => {
     }
   };
 
-  // Form Submit Handler
+  // --- Photo Upload Helper ---
+  // Upload new photo files (while keeping any previously saved photo URLs)
+  const uploadPhotos = async () => {
+    if (!selectedAppointment) return [];
+    const photoURLs = await Promise.all(
+      prescriptionPhotos.map(async (photo) => {
+        // If already a string (URL), keep as is
+        if (typeof photo === "string") return photo;
+        // Otherwise, upload file and return URL
+        const uniqueName = `${Date.now()}_${photo.name}`;
+        const photoStorageRef = storageRef(
+          storage,
+          `prescriptions/${selectedAppointment.uid}/${selectedAppointment.appointmentId}/photos/${uniqueName}`
+        );
+        await uploadBytes(photoStorageRef, photo);
+        const url = await getDownloadURL(photoStorageRef);
+        return url;
+      })
+    );
+    return photoURLs;
+  };
+
+  // --- Form Submit Handler ---
   const handleSubmitPrescription = async (e) => {
     e.preventDefault();
     if (!selectedAppointment) return;
+    // First, upload any new photos and get their URLs
+    const photoURLs = await uploadPhotos();
     const prescriptionData = {
       symptoms,
       medicines: showMedicineDetails ? medicines : [],
       overallInstruction,
+      photos: photoURLs, // store photo URLs in prescription data
       createdAt: new Date().toISOString(),
     };
     const appointmentRef = ref(
@@ -359,7 +406,6 @@ const DoctorPrescription = () => {
     }
   };
 
-  // --- Render ---
   return (
     <div className="container my-4">
       <h1 className="text-center mb-4">
@@ -402,12 +448,10 @@ const DoctorPrescription = () => {
       <div className="row">
         {filteredAppointments.length > 0 ? (
           filteredAppointments.map((appointment, idx) => {
-            const phoneHistory = allAppointments.filter(
-              (a) =>
-                a.phone === appointment.phone &&
-                a.presciption &&
-                a.appointmentId !== appointment.appointmentId
-            );
+            // Include all prescription data for this phone (current + previous), sorted by creation date (most recent first)
+            const phoneHistory = allAppointments
+              .filter((a) => a.phone === appointment.phone && a.presciption)
+              .sort((a, b) => new Date(b.presciption.createdAt) - new Date(a.presciption.createdAt));
             return (
               <div className="col-md-6 mb-3" key={idx}>
                 <div className="card shadow-sm border-primary h-100">
@@ -431,6 +475,7 @@ const DoctorPrescription = () => {
                       <button
                         className="btn btn-secondary btn-sm mt-2"
                         onClick={() => {
+                          // Set history modal items with all prescription history for this phone
                           setHistoryModalItems(phoneHistory);
                           setShowHistoryModal(true);
                         }}
@@ -709,6 +754,70 @@ const DoctorPrescription = () => {
                   placeholder="Any additional instructions..."
                 ></textarea>
               </div>
+
+              {/* File input for multiple photos */}
+              <div className="mb-3">
+                <label className="form-label">
+                  <strong>Attach Photos:</strong>
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="form-control"
+                  onChange={handlePhotoChange}
+                />
+              </div>
+
+              {/* Preview of selected photos */}
+              {prescriptionPhotos.length > 0 && (
+                <div className="mb-3">
+                  <h5>Photo Preview:</h5>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                    {prescriptionPhotos.map((photo, idx) => {
+                      const src =
+                        typeof photo === "string"
+                          ? photo
+                          : URL.createObjectURL(photo);
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            position: "relative",
+                            width: "100px",
+                            height: "100px",
+                            border: "1px solid #ccc",
+                            borderRadius: "5px",
+                          }}
+                        >
+                          <img
+                            src={src}
+                            alt={`Prescription Photo ${idx + 1}`}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(idx)}
+                            style={{
+                              position: "absolute",
+                              top: 0,
+                              right: 0,
+                              background: "rgba(255,0,0,0.7)",
+                              border: "none",
+                              color: "#fff",
+                              cursor: "pointer",
+                              borderRadius: "0 5px 0 5px",
+                            }}
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <button type="submit" className="btn btn-success">
                 Save Prescription
               </button>
@@ -751,13 +860,13 @@ const DoctorPrescription = () => {
             />
           </div>
 
-          {/* Page 2: Prescription Details */}
+          {/* Page 2: Prescription Details (attached photos omitted) */}
           <div
             ref={prescriptionRef}
             style={{
               width: "210mm",
               minHeight: "297mm",
-              padding: "30mm 20mm 20mm 20mm", // top, right, bottom, left
+              padding: "30mm 20mm 20mm 20mm",
               backgroundImage: `url(${letterhead.src})`,
               backgroundSize: "contain",
               backgroundRepeat: "no-repeat",
@@ -775,7 +884,6 @@ const DoctorPrescription = () => {
                 display: "flex",
                 justifyContent: "space-between",
                 marginBottom: "10mm",
-                // marginTop:"20mm",
               }}
             >
               <div style={{ width: "45%" }}>
@@ -889,7 +997,7 @@ const DoctorPrescription = () => {
             >
               &times;
             </button>
-            <h4>Previous Prescription History</h4>
+            <h4>Prescription History</h4>
             {historyModalItems.map((item, index) => (
               <div
                 key={index}
@@ -904,12 +1012,10 @@ const DoctorPrescription = () => {
                   <strong>Appointment Date:</strong> {item.appointmentDate}
                 </p>
                 <p>
-                  <strong>Symptoms/Disease:</strong>{" "}
-                  {item.presciption.symptoms}
+                  <strong>Symptoms/Disease:</strong> {item.presciption.symptoms}
                 </p>
                 <p>
-                  <strong>Overall Instructions:</strong>{" "}
-                  {item.presciption.overallInstruction}
+                  <strong>Overall Instructions:</strong> {item.presciption.overallInstruction}
                 </p>
                 {item.presciption.medicines &&
                   item.presciption.medicines.length > 0 && (
@@ -948,9 +1054,59 @@ const DoctorPrescription = () => {
                       </table>
                     </div>
                   )}
+                {/* Thumbnails for attached photos – click to view full screen */}
+                {item.presciption.photos &&
+                  item.presciption.photos.length > 0 && (
+                    <div className="mt-2">
+                      <h5>Attached Photos:</h5>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                        {item.presciption.photos.map((photoUrl, idx) => (
+                          <img
+                            key={idx}
+                            src={photoUrl}
+                            alt={`Prescription Photo ${idx + 1}`}
+                            style={{
+                              width: "100px",
+                              height: "100px",
+                              objectFit: "cover",
+                              borderRadius: "5px",
+                              cursor: "pointer",
+                            }}
+                            onClick={() => setFullScreenPhoto(photoUrl)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Full Screen Photo Modal */}
+      {fullScreenPhoto && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.9)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+            cursor: "pointer",
+          }}
+          onClick={() => setFullScreenPhoto(null)}
+        >
+          <img
+            src={fullScreenPhoto}
+            alt="Full Screen Prescription"
+            style={{ maxWidth: "90%", maxHeight: "90%" }}
+          />
         </div>
       )}
     </div>

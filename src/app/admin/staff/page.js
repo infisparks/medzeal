@@ -66,7 +66,7 @@ const AdminDashboard = () => {
           { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
           { title: "Download Invoice", icon: faFileInvoice, link: "/admin/invoice", color: "secondary" },
           { title: "Add Vendor", icon: faStore, link: "/admin/vendorentry", color: "dark" },
-          { title: "All Vendors & Add Products", icon: faUsers, link: "/admin/vendors", color: "success" },
+          // { title: "All Vendors & Add Products", icon: faUsers, link: "/admin/vendors", color: "success" },
         ].map((item, index) => (
           <div key={index} className="col-xxl-3 col-lg-4 col-md-6">
             <Link href={item.link} className="text-decoration-none">
