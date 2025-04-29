@@ -123,7 +123,14 @@ Team Medzeal
 
   const handleApprove = async (id, uid, email, appointmentDate, appointmentTime, doctor, name, phone) => { 
     const appointmentRef = ref(db, `appointments/${uid}/${id}`); 
-    const { paymentMethod = "", price = "", consultantAmount } = appointmentUpdates[id] || {}; 
+    const { 
+      paymentMethod = "", 
+      price = "", 
+      consultantAmount,
+      addProduct,
+      productAmount,
+      productDescription
+    } = appointmentUpdates[id] || {}; 
 
     // Validate required payment method
     if (!paymentMethod) {
@@ -136,7 +143,11 @@ Team Medzeal
         approved: true, 
         paymentMethod, 
         price: price ? parseFloat(price) : 0, 
-        ...(consultantAmount ? { consultantAmount: parseFloat(consultantAmount) } : {})
+        ...(consultantAmount ? { consultantAmount: parseFloat(consultantAmount) } : {}),
+        ...(addProduct ? { 
+          productAmount: productAmount ? parseFloat(productAmount) : 0,
+          ...(productDescription ? { productDescription } : {})
+        } : {})
       });
       
       // After approval update, send the professional WhatsApp message
@@ -227,61 +238,128 @@ Team Medzeal
             return ( 
               <div key={id} className="col-md-6 mb-4"> 
                 <div className={`card shadow-sm border-light hover-shadow ${isVip ? "vip-card" : ""}`}> 
-                  <div className="card-body"> 
-                    <p><strong><FaCalendar /> Date:</strong> {appointmentDate}</p> 
-                    <p><strong><FaClock /> Time:</strong> {appointmentTime}</p> 
-                    <p><strong><FaUser /> Doctor:</strong> {doctor}</p> 
+                  <div className="card-body">
+                    <div className="appointment-header mb-3 pb-2 border-bottom">
+                      <div className="d-flex justify-content-between align-items-center">
+                        <h5 className="card-title mb-0">{name}</h5>
+                        {isVip && <span className="badge bg-warning text-dark">Admin</span>}
+                      </div>
+                      <p className="text-muted mb-0">{email}</p>
+                      <p className="mb-0"><a href={`tel:${phone}`} className="text-decoration-none">{phone}</a></p>
+                    </div>
+                    
+                    <div className="appointment-details mb-3">
+                      <div className="row">
+                        <div className="col-md-6">
+                          <p className="mb-1"><FaCalendar className="me-2 text-primary" /> <strong>Date:</strong> {appointmentDate}</p>
+                          <p className="mb-1"><FaClock className="me-2 text-primary" /> <strong>Time:</strong> {appointmentTime}</p>
+                        </div>
+                        <div className="col-md-6">
+                          <p className="mb-1"><FaUser className="me-2 text-primary" /> <strong>Doctor:</strong> {doctor}</p>
+                          <p className="mb-1"><span className={`badge ${approved ? 'bg-success' : 'bg-warning'}`}>
+                            {approved ? 'Approved' : 'Pending'}
+                          </span></p>
+                        </div>
+                      </div>
+                      
+                      <div className="message-box mt-2 p-2 bg-light rounded">
+                        <p className="mb-0"><FaEnvelope className="me-2 text-primary" /> <strong>Message:</strong> {message}</p>
+                      </div>
+                    </div>
                     
                     {/* Payment Details Section */}
-                    <p>
-                      <strong>Payment Method:</strong> 
-                      <select 
-                        value={appointmentUpdates[id]?.paymentMethod || ""} 
-                        onChange={(e) => handleUpdateChange(id, 'paymentMethod', e.target.value)} 
-                        className="form-select form-select-sm"
-                      >
-                        <option value="">Select Payment Method</option>
-                        <option value="Cash">Cash</option>
-                        <option value="Online">Online</option>
-                      </select>
-                    </p>
-                    <p>
-                      <strong>Price:</strong> 
-                      <input 
-                        type="number" 
-                        value={appointmentUpdates[id]?.price || ""} 
-                        onChange={(e) => handleUpdateChange(id, 'price', e.target.value)} 
-                        placeholder="Price" 
-                        className="form-control form-control-sm" 
-                      />
-                    </p>
-                    <p>
-                      <input 
-                        type="checkbox" 
-                        checked={appointmentUpdates[id]?.addConsultant || false} 
-                        onChange={(e) => handleUpdateChange(id, 'addConsultant', e.target.checked)} 
-                        id={`addConsultant-${id}`}
-                      />
-                      <label htmlFor={`addConsultant-${id}`}> Add Consultant Amount</label>
-                    </p>
-                    {appointmentUpdates[id]?.addConsultant && (
-                      <p>
-                        <strong>Consultant Amount:</strong> 
+                    <div className="payment-details-section p-3 mb-3 bg-light rounded border">
+                      <h5 className="mb-3 text-primary"><i className="fas fa-money-bill-wave me-2"></i>Payment Details</h5>
+                      <div className="row mb-2">
+                        <div className="col-md-6">
+                          <label className="form-label fw-bold">Payment Method:</label>
+                          <select 
+                            value={appointmentUpdates[id]?.paymentMethod || ""} 
+                            onChange={(e) => handleUpdateChange(id, 'paymentMethod', e.target.value)} 
+                            className="form-select form-select-sm"
+                          >
+                            <option value="">Select Payment Method</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Online">Online</option>
+                          </select>
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label fw-bold">Price:</label>
+                          <input 
+                            type="number" 
+                            value={appointmentUpdates[id]?.price || ""} 
+                            onChange={(e) => handleUpdateChange(id, 'price', e.target.value)} 
+                            placeholder="Price" 
+                            className="form-control form-control-sm" 
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="form-check mb-2">
                         <input 
-                          type="number" 
-                          value={appointmentUpdates[id]?.consultantAmount || ""} 
-                          onChange={(e) => handleUpdateChange(id, 'consultantAmount', e.target.value)} 
-                          placeholder="Consultant Amount" 
-                          className="form-control form-control-sm" 
+                          type="checkbox" 
+                          className="form-check-input" 
+                          checked={appointmentUpdates[id]?.addConsultant || false} 
+                          onChange={(e) => handleUpdateChange(id, 'addConsultant', e.target.checked)} 
+                          id={`addConsultant-${id}`}
                         />
-                      </p>
-                    )}
-
-                    <p><strong>Approved:</strong> {approved ? 'Yes' : 'No'}</p> 
-                    <p><strong><FaEnvelope /> Message:</strong> {message}</p>
-                    <p><strong><FaEnvelope /> Email:</strong> {email}</p> 
-                    <p><strong><FaUser /> Name:</strong> {name}</p> 
-                    <p><strong><FaPhone /> Phone:</strong> {phone}</p> 
+                        <label className="form-check-label" htmlFor={`addConsultant-${id}`}>
+                          Add Consultant Amount
+                        </label>
+                      </div>
+                      
+                      {appointmentUpdates[id]?.addConsultant && (
+                        <div className="mb-2">
+                          <label className="form-label fw-bold">Consultant Amount:</label>
+                          <input 
+                            type="number" 
+                            value={appointmentUpdates[id]?.consultantAmount || ""} 
+                            onChange={(e) => handleUpdateChange(id, 'consultantAmount', e.target.value)} 
+                            placeholder="Consultant Amount" 
+                            className="form-control form-control-sm" 
+                          />
+                        </div>
+                      )}
+                      
+                      {/* New Product Entry Feature */}
+                      <div className="form-check mb-2 mt-3">
+                        <input 
+                          type="checkbox" 
+                          className="form-check-input" 
+                          checked={appointmentUpdates[id]?.addProduct || false} 
+                          onChange={(e) => handleUpdateChange(id, 'addProduct', e.target.checked)} 
+                          id={`addProduct-${id}`}
+                        />
+                        <label className="form-check-label" htmlFor={`addProduct-${id}`}>
+                          Add Product Details
+                        </label>
+                      </div>
+                      
+                      {appointmentUpdates[id]?.addProduct && (
+                        <div className="product-details border-top pt-2">
+                          <div className="mb-2">
+                            <label className="form-label fw-bold">Product Amount:</label>
+                            <input 
+                              type="number" 
+                              value={appointmentUpdates[id]?.productAmount || ""} 
+                              onChange={(e) => handleUpdateChange(id, 'productAmount', e.target.value)} 
+                              placeholder="Product Amount" 
+                              className="form-control form-control-sm" 
+                            />
+                          </div>
+                          <div className="mb-2">
+                            <label className="form-label fw-bold">Product Description (Optional):</label>
+                            <textarea 
+                              value={appointmentUpdates[id]?.productDescription || ""} 
+                              onChange={(e) => handleUpdateChange(id, 'productDescription', e.target.value)} 
+                              placeholder="Enter product details..." 
+                              className="form-control form-control-sm" 
+                              rows="2"
+                            ></textarea>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     
                     <div className="btn-group d-flex justify-content-between mt-3">
                       <button 
@@ -319,71 +397,107 @@ Team Medzeal
       </div> 
 
       <style jsx>{` 
-        .hover-shadow:hover { 
-          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); 
-          transition: box-shadow 0.3s ease; 
-        } 
-        .btn { 
-          display: flex; 
-          align-items: center; 
-          justify-content: center; 
-          border-radius: 50px; 
-          transition: background-color 0.3s ease; 
-        } 
-        .btn-success { background-color: #28a745; color: white; } 
-        .btn-success:hover { background-color: #218838; }
-        .btn-danger { background-color: #dc3545; color: white; }
-        .btn-danger:hover { background-color: #c82333; }
-        .btn-warning { background-color: #ffc107; color: white; }
-        .btn-warning:hover { background-color: #e0a800; }
-        .btn-info { background-color: #17a2b8; color: white; }
-        .btn-info:hover { background-color: #138496; }
-        .btn-group { gap: 0.5rem; }
-        .btn-sm { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
+  .hover-shadow:hover { 
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); 
+    transition: box-shadow 0.3s ease; 
+  } 
+  .btn { 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    border-radius: 50px; 
+    transition: all 0.3s ease; 
+  } 
+  .btn-success { background-color: #28a745; color: white; } 
+  .btn-success:hover { background-color: #218838; transform: translateY(-2px); }
+  .btn-danger { background-color: #dc3545; color: white; }
+  .btn-danger:hover { background-color: #c82333; transform: translateY(-2px); }
+  .btn-warning { background-color: #ffc107; color: white; }
+  .btn-warning:hover { background-color: #e0a800; transform: translateY(-2px); }
+  .btn-info { background-color: #17a2b8; color: white; }
+  .btn-info:hover { background-color: #138496; transform: translateY(-2px); }
+  .btn-group { gap: 0.5rem; }
+  .btn-sm { padding: 0.5rem 0.75rem; font-size: 0.875rem; }
 
-        /* VIP card styles */
-        .vip-card {
-          background: linear-gradient(45deg, #ffd700, #ffa500);
-          color: #fff;
-          border: 2px solid gold;
-          box-shadow: 0 0 20px gold;
-          position: relative;
-          overflow: hidden;
-        }
-        .vip-card::after {
-          content: "";
-          position: absolute;
-          top: 0;
-          left: -100%;
-          width: 200%;
-          height: 100%;
-          background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-          transform: skewX(-30deg);
-          animation: shine 2s infinite;
-        }
-        @keyframes shine {
-          0% { left: -100%; }
-          100% { left: 100%; }
-        }
+  .card {
+    transition: all 0.3s ease;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  
+  .card-body {
+    padding: 1.5rem;
+  }
+  
+  .payment-details-section {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+  }
+  
+  .payment-details-section:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .form-control:focus, .form-select:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  }
+  
+  .message-box {
+    background-color: #f8f9fa;
+    border-left: 3px solid #007bff;
+  }
 
-        /* Shining effect for VIP input fields with a slight yellow background */
-        .vip-input {
-          animation: inputShine 3s infinite;
-          border: 2px solid gold !important;
-          background-color: #ffffe0; /* light yellow */
-        }
-        @keyframes inputShine {
-          0% {
-            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
-          }
-          50% {
-            box-shadow: 0 0 8px rgba(255, 215, 0, 1);
-          }
-          100% {
-            box-shadow: 0 0 0px rgba(255, 215, 0, 0.8);
-          }
-        }
-      `}</style> 
+  /* VIP card styles */
+  .vip-card {
+    background: linear-gradient(135deg, #ffffff, #fff8e1);
+    border: 2px solid #ffd700;
+    box-shadow: 0 10px 20px rgba(255, 215, 0, 0.2);
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .vip-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 150px;
+    height: 150px;
+    background: linear-gradient(135deg, transparent 50%, rgba(255, 215, 0, 0.1) 50%);
+    z-index: 0;
+  }
+  
+  .vip-card .card-body {
+    position: relative;
+    z-index: 1;
+  }
+  
+  .vip-card .badge.bg-warning {
+    background-color: #ffd700 !important;
+    color: #000 !important;
+    font-weight: bold;
+    padding: 0.5em 0.8em;
+    border-radius: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  }
+  
+  /* Product details section */
+  .product-details {
+    animation: fadeIn 0.5s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  @keyframes shine {
+    0% { left: -100%; }
+    100% { left: 100%; }
+  }
+`}</style> 
     </div> 
   ); 
 }; 

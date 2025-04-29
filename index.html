@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>JSON Visualizer</title>
+  <!-- Load the JSON Crack web component from a CDN -->
+  <script src="https://unpkg.com/@jsoncrack/web/dist/index.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    #jsonInput {
+      width: 100%;
+      height: 150px;
+    }
+    #visualizer {
+      width: 100%;
+      height: 500px;
+      margin-top: 20px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+
+<h1>JSON Visualizer</h1>
+
+<!-- Text area where user can paste their JSON -->
+<textarea id="jsonInput" placeholder="Paste your JSON here..."></textarea><br/>
+<button id="renderButton">Render</button>
+
+<!-- The container for JSON Crack -->
+<json-crack id="visualizer"></json-crack>
+
+<script>
+  // Grab references to the text area & JSON Crack component
+  const jsonInput = document.getElementById('jsonInput');
+  const jsonCrack = document.getElementById('visualizer');
+  const renderButton = document.getElementById('renderButton');
+
+  renderButton.addEventListener('click', () => {
+    try {
+      // Parse the JSON from the text area
+      const data = JSON.parse(jsonInput.value);
+
+      // Pass the parsed data to the JSON Crack component
+      jsonCrack.data = data;
+    } catch (err) {
+      alert('Invalid JSON:\n\n' + err);
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -63,9 +63,9 @@ const AdminDashboard = () => {
           
           { title: "Today Appointments", icon: faCalendarDay, link: "/admin/todayattend", color: "info" },
           { title: "User History", icon: faHistory, link: "/admin/userhistory", color: "dark" },
-          { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
+          // { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
           { title: "Download Invoice", icon: faFileInvoice, link: "/admin/invoice", color: "secondary" },
-          { title: "Add Vendor", icon: faStore, link: "/admin/vendorentry", color: "dark" },
+          // { title: "Add Vendor", icon: faStore, link: "/admin/vendorentry", color: "dark" },
           // { title: "All Vendors & Add Products", icon: faUsers, link: "/admin/vendors", color: "success" },
         ].map((item, index) => (
           <div key={index} className="col-xxl-3 col-lg-4 col-md-6">

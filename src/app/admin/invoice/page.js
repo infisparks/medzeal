@@ -1,158 +1,160 @@
-"use client";
+"use client"
 
-import React, { useEffect, useState, useRef } from 'react';
-import { db } from '../../../lib/firebaseConfig';
-import { ref as dbRef, onValue, off } from 'firebase/database';
-import { 
-  FaFileDownload, 
-  FaMoneyBillWave, 
-  FaCreditCard,
-  FaClinicMedical
-} from 'react-icons/fa';
-import { Spinner, Button, Table, Form } from 'react-bootstrap';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useEffect, useState, useRef } from "react"
+import { db } from "../../../lib/firebaseConfig"
+import { ref as dbRef, onValue, off } from "firebase/database"
+import { FaFileDownload, FaMoneyBillWave, FaCreditCard, FaClinicMedical } from "react-icons/fa"
+import { Spinner, Button, Table, Form } from "react-bootstrap"
+import jsPDF from "jspdf"
+import "jspdf-autotable"
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
 
 const TodayAttendedInvoice = () => {
-  const [appointments, setAppointments] = useState([]);
-  const [doctors, setDoctors] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [totalCash, setTotalCash] = useState(0);
-  const [totalOnline, setTotalOnline] = useState(0);
-  const [totalConsultant, setTotalConsultant] = useState(0);
+  const [appointments, setAppointments] = useState([])
+  const [doctors, setDoctors] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [totalCash, setTotalCash] = useState(0)
+  const [totalOnline, setTotalOnline] = useState(0)
+  const [totalConsultant, setTotalConsultant] = useState(0)
   const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
-  const [sending, setSending] = useState(false);
+    const today = new Date()
+    return today.toISOString().split("T")[0]
+  })
+  const [sending, setSending] = useState(false)
+  const [totalProductAmount, setTotalProductAmount] = useState(0)
 
-  const invoiceRef = useRef();
+  const invoiceRef = useRef()
 
   useEffect(() => {
-    const appointmentsRef = dbRef(db, 'appointments');
-    const doctorsRef = dbRef(db, 'doctors');
+    const appointmentsRef = dbRef(db, "appointments")
+    const doctorsRef = dbRef(db, "doctors")
 
     const handleAppointments = (snapshot) => {
-      const data = snapshot.val();
-      const date = selectedDate;
-      const attendedAppointments = [];
-      let cashTotal = 0;
-      let onlineTotal = 0;
-      let consultantTotal = 0;
+      const data = snapshot.val()
+      const date = selectedDate
+      const attendedAppointments = []
+      let cashTotal = 0
+      let onlineTotal = 0
+      let consultantTotal = 0
+      let productTotal = 0
 
       if (data) {
         Object.entries(data).forEach(([userId, userAppointments]) => {
           Object.entries(userAppointments).forEach(([id, details]) => {
             if (details.attended === true && details.appointmentDate === date) {
-              attendedAppointments.push({ ...details, id, userId });
+              attendedAppointments.push({ ...details, id, userId })
               if (details.price) {
-                const price = parseFloat(details.price);
-                if (details.paymentMethod === 'Cash') {
-                  cashTotal += price;
-                } else if (details.paymentMethod === 'Online') {
-                  onlineTotal += price;
+                const price = Number.parseFloat(details.price)
+                if (details.paymentMethod === "Cash") {
+                  cashTotal += price
+                } else if (details.paymentMethod === "Online") {
+                  onlineTotal += price
                 }
               }
               if (details.consultantAmount) {
-                const consultantPrice = parseFloat(details.consultantAmount);
-                consultantTotal += consultantPrice;
+                const consultantPrice = Number.parseFloat(details.consultantAmount)
+                consultantTotal += consultantPrice
+              }
+              if (details.productAmount) {
+                const productPrice = Number.parseFloat(details.productAmount)
+                productTotal += productPrice
               }
             }
-          });
-        });
+          })
+        })
       }
 
       attendedAppointments.sort((a, b) => {
-        const dateA = new Date(`${a.appointmentDate} ${a.appointmentTime}`);
-        const dateB = new Date(`${b.appointmentDate} ${b.appointmentTime}`);
-        return dateA - dateB;
-      });
+        const dateA = new Date(`${a.appointmentDate} ${a.appointmentTime}`)
+        const dateB = new Date(`${b.appointmentDate} ${b.appointmentTime}`)
+        return dateA - dateB
+      })
 
-      setAppointments(attendedAppointments);
-      setTotalCash(cashTotal);
-      setTotalOnline(onlineTotal);
-      setTotalConsultant(consultantTotal);
-      setLoading(false);
-    };
+      setAppointments(attendedAppointments)
+      setTotalCash(cashTotal)
+      setTotalOnline(onlineTotal)
+      setTotalConsultant(consultantTotal)
+      setTotalProductAmount(productTotal)
+      setLoading(false)
+    }
 
     const handleDoctors = (snapshot) => {
-      const data = snapshot.val();
-      setDoctors(data || {});
-    };
+      const data = snapshot.val()
+      setDoctors(data || {})
+    }
 
-    onValue(appointmentsRef, handleAppointments);
-    onValue(doctorsRef, handleDoctors);
+    onValue(appointmentsRef, handleAppointments)
+    onValue(doctorsRef, handleDoctors)
 
     return () => {
-      off(appointmentsRef, 'value', handleAppointments);
-      off(doctorsRef, 'value', handleDoctors);
-    };
-  }, [selectedDate]);
+      off(appointmentsRef, "value", handleAppointments)
+      off(doctorsRef, "value", handleDoctors)
+    }
+  }, [selectedDate])
 
   const handleDateChange = (e) => {
-    setLoading(true);
-    setSelectedDate(e.target.value);
-  };
+    setLoading(true)
+    setSelectedDate(e.target.value)
+  }
 
   const generatePDF = () => {
-    const pdf = new jsPDF('p', 'pt', 'a4');
-    const invoice = invoiceRef.current;
+    const pdf = new jsPDF("p", "pt", "a4")
+    const invoice = invoiceRef.current
 
     pdf.html(invoice, {
-      callback: function (doc) {
-        doc.save(`Invoice_${selectedDate}.pdf`);
+      callback: (doc) => {
+        doc.save(`Invoice_${selectedDate}.pdf`)
       },
       margin: [20, 20, 20, 20],
-      autoPaging: 'text',
+      autoPaging: "text",
       html2canvas: { scale: 0.5 },
       x: 0,
       y: 0,
       width: 595 - 40,
       windowWidth: invoice.scrollWidth,
-    });
-  };
+    })
+  }
 
   // Helper: Generate PDF blob from invoice content
   const generatePDFBlob = () => {
     return new Promise((resolve, reject) => {
-      const pdf = new jsPDF('p', 'pt', 'a4');
-      const invoice = invoiceRef.current;
+      const pdf = new jsPDF("p", "pt", "a4")
+      const invoice = invoiceRef.current
       pdf.html(invoice, {
-        callback: function (doc) {
+        callback: (doc) => {
           try {
-            const blob = doc.output('blob');
-            resolve(blob);
+            const blob = doc.output("blob")
+            resolve(blob)
           } catch (error) {
-            reject(error);
+            reject(error)
           }
         },
         margin: [20, 20, 20, 20],
-        autoPaging: 'text',
+        autoPaging: "text",
         html2canvas: { scale: 0.5 },
         x: 0,
         y: 0,
         width: 595 - 40,
         windowWidth: invoice.scrollWidth,
-      });
-    });
-  };
+      })
+    })
+  }
 
   // Upload PDF to Firebase Storage and send invoice via API with professional message
   const handleSendInvoice = async () => {
-    setSending(true);
+    setSending(true)
     try {
-      const pdfBlob = await generatePDFBlob();
-      const storage = getStorage();
-      const fileName = `Invoice_${selectedDate}_${Date.now()}.pdf`;
-      const fileRef = storageRef(storage, `invoices/${fileName}`);
-      await uploadBytes(fileRef, pdfBlob);
-      const downloadUrl = await getDownloadURL(fileRef);
+      const pdfBlob = await generatePDFBlob()
+      const storage = getStorage()
+      const fileName = `Invoice_${selectedDate}_${Date.now()}.pdf`
+      const fileRef = storageRef(storage, `invoices/${fileName}`)
+      await uploadBytes(fileRef, pdfBlob)
+      const downloadUrl = await getDownloadURL(fileRef)
 
       // Calculate grand total
-      const grandTotal = totalCash + totalOnline + totalConsultant;
+      const grandTotal = totalCash + totalOnline + totalConsultant + totalProductAmount
       // Format selected date for the message
-      const formattedDate = new Date(selectedDate).toLocaleDateString();
+      const formattedDate = new Date(selectedDate).toLocaleDateString()
 
       // Build a professional message with the calculations
       const message = `
@@ -162,40 +164,41 @@ The calculation details are as follows:
 - Total Cash: RS ${totalCash.toFixed(2)}
 - Total Online: RS ${totalOnline.toFixed(2)}
 - Total Consultant Amount: RS ${totalConsultant.toFixed(2)}
+- Total Product Amount: RS ${totalProductAmount.toFixed(2)}
 - Grand Total: RS ${grandTotal.toFixed(2)}
 
 Thank you for your business.
-MedZeal`;
+MedZeal`
 
       const payload = {
         token: "99583991572",
         number: "917738408252",
         imageUrl: downloadUrl,
-        caption: message
-      };
+        caption: message,
+      }
 
       const response = await fetch("https://wa.medblisss.com/send-image-url", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload)
-      });
+        body: JSON.stringify(payload),
+      })
 
       if (!response.ok) {
-        throw new Error("Failed to send invoice via API");
+        throw new Error("Failed to send invoice via API")
       }
-      
-      const responseData = await response.json();
-      alert("Invoice sent successfully!");
-      console.log("API response:", responseData);
+
+      const responseData = await response.json()
+      alert("Invoice sent successfully!")
+      console.log("API response:", responseData)
     } catch (error) {
-      console.error("Error sending invoice:", error);
-      alert("There was an error sending the invoice. Please try again.");
+      console.error("Error sending invoice:", error)
+      alert("There was an error sending the invoice. Please try again.")
     } finally {
-      setSending(false);
+      setSending(false)
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -203,7 +206,7 @@ MedZeal`;
         <Spinner animation="border" variant="primary" />
         <p className="mt-3">Loading invoice data...</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -217,21 +220,13 @@ MedZeal`;
         <div className="d-flex align-items-center mt-3 mt-md-0">
           <Form.Group controlId="dateFilter" className="me-3">
             <Form.Label className="mb-1">Select Date:</Form.Label>
-            <Form.Control 
-              type="date" 
-              value={selectedDate} 
-              onChange={handleDateChange} 
-            />
+            <Form.Control type="date" value={selectedDate} onChange={handleDateChange} />
           </Form.Group>
-          <Button 
-            variant="success" 
-            onClick={generatePDF} 
-            className="d-flex align-items-center mt-3 mt-md-0"
-          >
+          <Button variant="success" onClick={generatePDF} className="d-flex align-items-center mt-3 mt-md-0">
             <FaFileDownload className="me-2" />
             Download PDF
           </Button>
-          <Button 
+          <Button
             variant="primary"
             onClick={handleSendInvoice}
             className="d-flex align-items-center mt-3 mt-md-0 ms-3"
@@ -250,8 +245,12 @@ MedZeal`;
           </div>
           <div className="text-end company-details">
             <h3 className="text-primary">MedZeal</h3>
-            <p>Email: <a href="mailto:medzealpcw@gmail.com">medzealpcw@gmail.com</a></p>
-            <p>Phone: <a href="tel:+917044178786">+91 70441 78786</a></p>
+            <p>
+              Email: <a href="mailto:medzealpcw@gmail.com">medzealpcw@gmail.com</a>
+            </p>
+            <p>
+              Phone: <a href="tel:+917044178786">+91 70441 78786</a>
+            </p>
             <p>Address: Bluebells, Mumbra Bypass</p>
           </div>
         </div>
@@ -263,12 +262,22 @@ MedZeal`;
 
         <div className="d-flex justify-content-between mb-4">
           <div>
-            <p><strong>Invoice Number:</strong> INV-{Date.now()}</p>
+            <p>
+              <strong>Invoice Number:</strong> INV-{Date.now()}
+            </p>
           </div>
           {doctors.name || doctors.specialization ? (
             <div>
-              {doctors.name && <p><strong>Doctor:</strong> {doctors.name}</p>}
-              {doctors.specialization && <p><strong>Specialization:</strong> {doctors.specialization}</p>}
+              {doctors.name && (
+                <p>
+                  <strong>Doctor:</strong> {doctors.name}
+                </p>
+              )}
+              {doctors.specialization && (
+                <p>
+                  <strong>Specialization:</strong> {doctors.specialization}
+                </p>
+              )}
             </div>
           ) : null}
         </div>
@@ -283,6 +292,7 @@ MedZeal`;
               <th>Time</th>
               <th>Price (RS)</th>
               <th>Consultant Amount (RS)</th>
+              <th>Product Amount (RS)</th>
               <th>Payment Method</th>
             </tr>
           </thead>
@@ -290,25 +300,28 @@ MedZeal`;
             {appointments.map((appointment, index) => (
               <tr key={appointment.id}>
                 <td>{index + 1}</td>
-                <td>{appointment.name || 'N/A'}</td>
-                <td>{appointment.phone || 'N/A'}</td>
-                <td>{appointment.subCategory || 'N/A'}</td>
-                <td>{appointment.appointmentTime || 'N/A'}</td>
+                <td>{appointment.name || "N/A"}</td>
+                <td>{appointment.phone || "N/A"}</td>
+                <td>{appointment.subCategory || "N/A"}</td>
+                <td>{appointment.appointmentTime || "N/A"}</td>
                 <td>
-                  {appointment.price !== undefined && appointment.price !== null 
-                    ? `RS ${parseFloat(appointment.price).toFixed(2)}` 
-                    : 'N/A'}
+                  {appointment.price !== undefined && appointment.price !== null
+                    ? `RS ${Number.parseFloat(appointment.price).toFixed(2)}`
+                    : "N/A"}
                 </td>
                 <td>
-                  {appointment.consultantAmount 
-                    ? `RS ${parseFloat(appointment.consultantAmount).toFixed(2)}`
-                    : 'N/A'}
+                  {appointment.consultantAmount
+                    ? `RS ${Number.parseFloat(appointment.consultantAmount).toFixed(2)}`
+                    : "N/A"}
                 </td>
                 <td>
-                  {appointment.paymentMethod || 'N/A'}{' '}
-                  {appointment.paymentMethod === 'Cash' ? (
+                  {appointment.productAmount ? `RS ${Number.parseFloat(appointment.productAmount).toFixed(2)}` : "N/A"}
+                </td>
+                <td>
+                  {appointment.paymentMethod || "N/A"}{" "}
+                  {appointment.paymentMethod === "Cash" ? (
                     <FaMoneyBillWave className="text-success ms-1" title="Cash Payment" />
-                  ) : appointment.paymentMethod === 'Online' ? (
+                  ) : appointment.paymentMethod === "Online" ? (
                     <FaCreditCard className="text-primary ms-1" title="Online Payment" />
                   ) : null}
                 </td>
@@ -317,28 +330,42 @@ MedZeal`;
           </tbody>
           <tfoot>
             <tr>
-              <th colSpan="5" className="text-end">Total Cash</th>
-              <th colSpan="3">RS {totalCash.toFixed(2)}</th>
-            </tr>
-            <tr>
-              <th colSpan="5" className="text-end">Total Online</th>
-              <th colSpan="3">RS {totalOnline.toFixed(2)}</th>
-            </tr>
-            <tr>
-              <th colSpan="5" className="text-end">Total Consultant Amount</th>
-              <th colSpan="3">RS {totalConsultant.toFixed(2)}</th>
-            </tr>
-            <tr>
-              <th colSpan="5" className="text-end">Grand Total</th>
-              <th colSpan="3">
-                RS {(totalCash + totalOnline + totalConsultant).toFixed(2)}
+              <th colSpan="5" className="text-end">
+                Total Cash
               </th>
+              <th colSpan="4">RS {totalCash.toFixed(2)}</th>
+            </tr>
+            <tr>
+              <th colSpan="5" className="text-end">
+                Total Online
+              </th>
+              <th colSpan="4">RS {totalOnline.toFixed(2)}</th>
+            </tr>
+            <tr>
+              <th colSpan="5" className="text-end">
+                Total Consultant Amount
+              </th>
+              <th colSpan="4">RS {totalConsultant.toFixed(2)}</th>
+            </tr>
+            <tr>
+              <th colSpan="5" className="text-end">
+                Total Product Amount
+              </th>
+              <th colSpan="4">RS {totalProductAmount.toFixed(2)}</th>
+            </tr>
+            <tr>
+              <th colSpan="5" className="text-end">
+                Grand Total
+              </th>
+              <th colSpan="4">RS {(totalCash + totalOnline + totalConsultant + totalProductAmount).toFixed(2)}</th>
             </tr>
           </tfoot>
         </Table>
 
         <div className="text-center mt-4">
-          <p>Thank you for choosing <strong>MedZeal</strong>! We appreciate your business.</p>
+          <p>
+            Thank you for choosing <strong>MedZeal</strong>! We appreciate your business.
+          </p>
           <p className="mt-2">&copy; {new Date().getFullYear()} MedZeal. All rights reserved.</p>
         </div>
       </div>
@@ -497,7 +524,7 @@ MedZeal`;
         }
       `}</style>
     </div>
-  );
-};
+  )
+}
 
-export default TodayAttendedInvoice;
+export default TodayAttendedInvoice
