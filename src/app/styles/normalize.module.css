@@ -1295,11 +1295,7 @@ object {
 .mobile-menu-modal .offcanvas-modal .modal-content {
   padding: 0px 15px;
 }
-.modal-backdrop.fade.show {
-  background: #555;
-  opacity: 0.8;
-  z-index: 999999;
-}
+
 .mobile-menu-modal .offcanvas-btn {
   margin-top: 30px;
 }
