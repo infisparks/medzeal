@@ -72,7 +72,7 @@ const TodayAttendedAppointments = () => {
         // Loop through all appointments and filter today's attended
         Object.entries(data).forEach(([userId, userAppointments]) => {
           Object.entries(userAppointments).forEach(([id, details]) => {
-            if (details.attended === true && details.appointmentDate === today) {
+            if (details.attended === true && details.appointmentDate === today && !details.deleted) {
               attendedAppointments.push({ ...details, id, userId })
 
               // Accumulate price

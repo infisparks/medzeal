@@ -41,7 +41,7 @@ const TodayAttendedInvoice = () => {
       if (data) {
         Object.entries(data).forEach(([userId, userAppointments]) => {
           Object.entries(userAppointments).forEach(([id, details]) => {
-            if (details.attended === true && details.appointmentDate === date) {
+            if (details.attended === true && details.appointmentDate === date && !details.deleted) {
               attendedAppointments.push({ ...details, id, userId })
               if (details.price) {
                 const price = Number.parseFloat(details.price)

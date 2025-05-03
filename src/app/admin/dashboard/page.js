@@ -94,6 +94,12 @@ const Dashboard = () => {
       icon: <FaCalendarAlt size={40} color="#0d6efd" />
     },
     { 
+      title: 'Deleted Appointments', 
+    
+      path: '/admin/bin',
+      icon: <FaCalendarAlt size={40} color="#0d6efd" />
+    },
+    { 
       title: 'Inventory Dashboard', 
       path: '/admin/inventrydashboard',
       icon: <FaBoxOpen size={40} color="#0d6efd" />,
