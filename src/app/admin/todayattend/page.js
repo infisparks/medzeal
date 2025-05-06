@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { db } from "../../../lib/firebaseConfig"
-import { ref, onValue, off, update } from "firebase/database"
+import { db, auth } from "../../../lib/firebaseConfig"
+import { ref, onValue, off, update, push, serverTimestamp } from "firebase/database"
 import {
   FaPhoneAlt,
   FaMoneyBillWave,
@@ -20,6 +20,7 @@ import {
   FaSave,
   FaTimes,
   FaShoppingCart,
+  FaHistory,
 } from "react-icons/fa"
 import { Spinner, Button, Modal, Form, InputGroup } from "react-bootstrap"
 import * as XLSX from "xlsx"
@@ -54,6 +55,11 @@ const TodayAttendedAppointments = () => {
     productDescription: "",
   })
 
+  // Change history modal state
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [appointmentHistory, setAppointmentHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
   useEffect(() => {
     const appointmentsRef = ref(db, "appointments")
     const doctorsRef = ref(db, "doctors")
@@ -72,7 +78,7 @@ const TodayAttendedAppointments = () => {
         // Loop through all appointments and filter today's attended
         Object.entries(data).forEach(([userId, userAppointments]) => {
           Object.entries(userAppointments).forEach(([id, details]) => {
-            if (details.attended === true && details.appointmentDate === today && !details.deleted) {
+            if (details.attended === true && details.appointmentDate === today) {
               attendedAppointments.push({ ...details, id, userId })
 
               // Accumulate price
@@ -218,6 +224,33 @@ const TodayAttendedAppointments = () => {
     setShowAddProductModal(true)
   }
 
+  // Open history modal
+  const handleViewHistoryClick = async (appointment) => {
+    setEditingAppointment(appointment)
+    setLoadingHistory(true)
+    setShowHistoryModal(true)
+    
+    // Fetch change history for this appointment
+    const historyRef = ref(db, `changesHistory/${appointment.userId}/${appointment.id}`)
+    onValue(historyRef, (snapshot) => {
+      const historyData = snapshot.val()
+      if (historyData) {
+        // Convert to array and sort by timestamp descending
+        const historyArray = Object.entries(historyData).map(([id, data]) => ({
+          id,
+          ...data,
+        })).sort((a, b) => b.timestamp - a.timestamp)
+        
+        setAppointmentHistory(historyArray)
+      } else {
+        setAppointmentHistory([])
+      }
+      setLoadingHistory(false)
+    }, {
+      onlyOnce: true
+    })
+  }
+
   // Handle form input changes
   const handleEditFormChange = (e) => {
     const { name, value } = e.target
@@ -236,6 +269,59 @@ const TodayAttendedAppointments = () => {
     })
   }
 
+  // Record changes to history
+  const recordChangesToHistory = async (appointmentId, userId, originalData, newData) => {
+    try {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        console.error("No user is signed in")
+        return
+      }
+
+      const changes = []
+      
+      // Check for price changes
+      if (originalData.price !== newData.price) {
+        changes.push(`Price changed from RS ${originalData.price || 0} to RS ${newData.price}`)
+      }
+      
+      // Check for payment method changes
+      if (originalData.paymentMethod !== newData.paymentMethod) {
+        changes.push(`Payment method changed from ${originalData.paymentMethod || 'None'} to ${newData.paymentMethod}`)
+      }
+      
+      // Check for consultant amount changes
+      if (originalData.consultantAmount !== newData.consultantAmount) {
+        changes.push(`Consultant amount changed from RS ${originalData.consultantAmount || 0} to RS ${newData.consultantAmount}`)
+      }
+      
+      // Check for product amount changes
+      if (originalData.productAmount !== newData.productAmount) {
+        changes.push(`Product amount changed from RS ${originalData.productAmount || 0} to RS ${newData.productAmount}`)
+      }
+      
+      // Check for product description changes
+      if (originalData.productDescription !== newData.productDescription) {
+        changes.push(`Product description changed from "${originalData.productDescription || 'None'}" to "${newData.productDescription}"`)
+      }
+      
+      // If there are changes, record them
+      if (changes.length > 0) {
+        const historyRef = ref(db, `changesHistory/${userId}/${appointmentId}`)
+        await push(historyRef, {
+          changes,
+          timestamp: serverTimestamp(),
+          type: "edit",
+          enteredBy: currentUser.uid,
+          enteredByEmail: currentUser.email || "Unknown",
+          enteredByName: currentUser.displayName || "Unknown User"
+        })
+      }
+    } catch (error) {
+      console.error("Error recording changes to history:", error)
+    }
+  }
+
   // Save edited appointment
   const handleSaveEdit = async () => {
     if (!editingAppointment) return
@@ -251,7 +337,27 @@ const TodayAttendedAppointments = () => {
       if (editFormData.productAmount) updateData.productAmount = Number.parseFloat(editFormData.productAmount)
       if (editFormData.productDescription) updateData.productDescription = editFormData.productDescription
 
-      // Update in Firebase
+      // First record changes to history
+      await recordChangesToHistory(
+        editingAppointment.id, 
+        editingAppointment.userId, 
+        {
+          price: editingAppointment.price,
+          paymentMethod: editingAppointment.paymentMethod,
+          consultantAmount: editingAppointment.consultantAmount,
+          productAmount: editingAppointment.productAmount,
+          productDescription: editingAppointment.productDescription
+        },
+        {
+          price: updateData.price,
+          paymentMethod: updateData.paymentMethod,
+          consultantAmount: updateData.consultantAmount,
+          productAmount: updateData.productAmount,
+          productDescription: updateData.productDescription
+        }
+      )
+
+      // Then update in Firebase
       await update(appointmentRef, updateData)
       setShowEditModal(false)
       // Success message
@@ -275,6 +381,20 @@ const TodayAttendedAppointments = () => {
       }
       if (addProductData.productDescription) updateData.productDescription = addProductData.productDescription
 
+      // First record changes to history
+      await recordChangesToHistory(
+        editingAppointment.id, 
+        editingAppointment.userId, 
+        {
+          productAmount: editingAppointment.productAmount,
+          productDescription: editingAppointment.productDescription
+        },
+        {
+          productAmount: updateData.productAmount,
+          productDescription: updateData.productDescription
+        }
+      )
+
       // Update in Firebase
       await update(appointmentRef, updateData)
       setShowAddProductModal(false)
@@ -284,6 +404,21 @@ const TodayAttendedAppointments = () => {
       console.error("Error adding product:", error)
       alert("Failed to add product. Please try again.")
     }
+  }
+
+  // Format date for display
+  const formatDate = (timestamp) => {
+    if (!timestamp) return "N/A"
+    
+    const date = new Date(timestamp)
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
   }
 
   if (loading) {
@@ -408,6 +543,20 @@ const TodayAttendedAppointments = () => {
                           }
                         >
                           <FaEdit />
+                        </Button>
+                        <Button
+                          variant="info"
+                          size="sm"
+                          className="btn-icon me-1"
+                          onClick={() =>
+                            handleViewHistoryClick({
+                              id,
+                              userId,
+                              name,
+                            })
+                          }
+                        >
+                          <FaHistory />
                         </Button>
                         {!productAmount && (
                           <Button
@@ -698,6 +847,67 @@ const TodayAttendedAppointments = () => {
         </Modal.Footer>
       </Modal>
 
+      {/* Change History Modal */}
+      <Modal show={showHistoryModal} onHide={() => setShowHistoryModal(false)} centered size="lg">
+        <Modal.Header className="bg-info text-white">
+          <Modal.Title>
+            <FaHistory className="me-2" />
+            Change History for {editingAppointment?.name || "Appointment"}
+          </Modal.Title>
+          <Button variant="close" className="btn-close-white" onClick={() => setShowHistoryModal(false)} />
+        </Modal.Header>
+        <Modal.Body>
+          {loadingHistory ? (
+            <div className="text-center p-4">
+              <Spinner animation="border" variant="info" />
+              <p className="mt-3">Loading change history...</p>
+            </div>
+          ) : appointmentHistory.length > 0 ? (
+            <div className="history-timeline">
+              {appointmentHistory.map((history) => (
+                <div key={history.id} className="history-item">
+                  <div className="history-time">
+                    <div className="history-dot"></div>
+                    <div className="history-date">{formatDate(history.timestamp)}</div>
+                  </div>
+                  <div className="history-content">
+                    <div className="history-card">
+                      <div className="history-header">
+                        <span className="badge bg-info">
+                          {history.type === "edit" ? "Edit" : "Add"}
+                        </span>
+                        <span className="history-user">
+                          By: {history.enteredByName || history.enteredByEmail || "Unknown User"}
+                        </span>
+                      </div>
+                      <div className="history-changes">
+                        <ul className="list-unstyled mb-0">
+                          {history.changes.map((change, index) => (
+                            <li key={index} className="history-change-item">
+                              <FaEdit className="me-2 text-muted" />
+                              {change}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center p-4">
+              <p className="text-muted">No change history found for this appointment.</p>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowHistoryModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
       {/* Scoped Styles */}
       <style jsx>{`
         .bg-gradient-primary {
@@ -803,6 +1013,82 @@ const TodayAttendedAppointments = () => {
           padding: 8px;
           border-radius: 4px;
           border-left: 3px solid #ffc107;
+        }
+        
+        /* History timeline styles */
+        .history-timeline {
+          position: relative;
+          padding-left: 30px;
+        }
+        
+        .history-timeline::before {
+          content: '';
+          position: absolute;
+          left: 10px;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background-color: #dee2e6;
+        }
+        
+        .history-item {
+          position: relative;
+          margin-bottom: 20px;
+        }
+        
+        .history-time {
+          position: relative;
+          margin-bottom: 8px;
+        }
+        
+        .history-dot {
+          position: absolute;
+          left: -30px;
+          top: 5px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #17a2b8;
+          border: 3px solid #fff;
+          box-shadow: 0 0 0 2px #17a2b8;
+        }
+        
+        .history-date {
+          font-size: 0.85rem;
+          color: #6c757d;
+          font-weight: 500;
+        }
+        
+        .history-card {
+          background-color: #f8f9fa;
+          border-radius: 8px;
+          padding: 15px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        
+        .history-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        
+        .history-user {
+          font-size: 0.85rem;
+          color: #6c757d;
+        }
+        
+        .history-changes {
+          font-size: 0.95rem;
+        }
+        
+        .history-change-item {
+          padding: 8px 0;
+          border-bottom: 1px dashed #dee2e6;
+        }
+        
+        .history-change-item:last-child {
+          border-bottom: none;
         }
         
         /* Responsive adjustments */

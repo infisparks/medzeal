@@ -1,8 +1,9 @@
 "use client"
 import { useEffect, useState, useMemo } from "react"
-import { db } from "../../../lib/firebaseConfig"
-import { ref, onValue, update } from "firebase/database"
+import { db, auth } from "../../../lib/firebaseConfig"
+import { ref, onValue, update, remove, push, serverTimestamp } from "firebase/database"
 import * as XLSX from "xlsx"
+import { FaEdit, FaTrash, FaHistory, FaFileExport, FaCalendarDay } from "react-icons/fa"
 
 const AppointmentsPage = () => {
   const [appointments, setAppointments] = useState([])
@@ -11,6 +12,10 @@ const AppointmentsPage = () => {
   const [selectedYear, setSelectedYear] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [editingAppointment, setEditingAppointment] = useState(null)
+  const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [appointmentHistory, setAppointmentHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [selectedAppointmentForHistory, setSelectedAppointmentForHistory] = useState(null)
 
   // Get the current year dynamically
   const currentYear = new Date().getFullYear()
@@ -50,13 +55,13 @@ const AppointmentsPage = () => {
       const isMonthMatch = selectedMonth ? appointmentDate.split("-")[1] === selectedMonth : true
       const isYearMatch = selectedYear ? appointmentDate.split("-")[0] === selectedYear : true
       const isSearchMatch =
-        doctor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        phone.includes(searchTerm) ||
+        (doctor && doctor.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (message && message.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (name && name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (phone && phone.includes(searchTerm)) ||
         (productDescription && productDescription.toLowerCase().includes(searchTerm.toLowerCase()))
 
-      return isDateMatch && isMonthMatch && isYearMatch && isSearchMatch
+      return isDateMatch && isMonthMatch && isYearMatch && (searchTerm === "" || isSearchMatch)
     })
   }, [appointments, selectedDate, selectedMonth, selectedYear, searchTerm])
 
@@ -118,30 +123,134 @@ const AppointmentsPage = () => {
     XLSX.writeFile(workbook, "appointments.xlsx")
   }
 
-  // Move to Bin instead of Delete
-  const handleMoveToBin = (key, id) => {
+  // Record changes to history
+  const recordChangesToHistory = async (appointmentData, actionType, changes = []) => {
+    try {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        console.error("No user is signed in")
+        return
+      }
+
+      const historyRef = ref(db, `changesHistory/${appointmentData.key}/${appointmentData.id}`)
+
+      // For delete action, save all appointment data
+      if (actionType === "delete") {
+        await push(historyRef, {
+          actionType,
+          timestamp: serverTimestamp(),
+          enteredBy: currentUser.uid,
+          enteredByEmail: currentUser.email || "Unknown",
+          enteredByName: currentUser.displayName || "Unknown User",
+          appointmentData: { ...appointmentData }, // Save all appointment data
+        })
+      }
+      // For edit action, save the specific changes
+      else if (actionType === "edit") {
+        await push(historyRef, {
+          actionType,
+          changes,
+          timestamp: serverTimestamp(),
+          enteredBy: currentUser.uid,
+          enteredByEmail: currentUser.email || "Unknown",
+          enteredByName: currentUser.displayName || "Unknown User",
+        })
+      }
+    } catch (error) {
+      console.error("Error recording changes to history:", error)
+      throw error // Re-throw to handle in the calling function
+    }
+  }
+
+  // Permanently Delete Appointment
+  const handleDelete = async (appointment) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to permanently delete this appointment? This action cannot be undone.",
+    )
+    if (!confirmed) return
+
+    try {
+      // First record the deletion in history
+      await recordChangesToHistory(appointment, "delete")
+
+      // Then permanently delete the appointment
+      const appointmentRef = ref(db, `appointments/${appointment.key}/${appointment.id}`)
+      await remove(appointmentRef)
+
+      console.log("Appointment permanently deleted")
+    } catch (error) {
+      console.error("Error deleting appointment:", error)
+      alert("Failed to delete appointment. Please try again.")
+    }
+  }
+
+  // Move to Bin instead of Delete (Soft Delete)
+  const handleMoveToBin = async (appointment) => {
     const confirmed = window.confirm("Do you want to move this appointment to bin?")
     if (!confirmed) return
 
-    const appointmentRef = ref(db, `appointments/${key}/${id}`)
-    const userEmail = localStorage.getItem("userEmail") || "unknown@example.com" // Get logged in user email
+    try {
+      // First record the soft deletion in history
+      await recordChangesToHistory(appointment, "move-to-bin")
 
-    update(appointmentRef, {
-      deleted: true,
-      deletedBy: userEmail,
-      deletedAt: new Date().toISOString(),
-    })
-      .then(() => {
-        console.log("Appointment moved to bin successfully")
+      // Then mark as deleted
+      const appointmentRef = ref(db, `appointments/${appointment.key}/${appointment.id}`)
+      const userEmail = auth.currentUser?.email || localStorage.getItem("userEmail") || "unknown@example.com"
+
+      await update(appointmentRef, {
+        deleted: true,
+        deletedBy: userEmail,
+        deletedAt: new Date().toISOString(),
       })
-      .catch((error) => {
-        console.error("Error moving appointment to bin:", error)
-      })
+
+      console.log("Appointment moved to bin successfully")
+    } catch (error) {
+      console.error("Error moving appointment to bin:", error)
+      alert("Failed to move appointment to bin. Please try again.")
+    }
+  }
+
+  // View Change History
+  const handleViewHistory = async (appointment) => {
+    setSelectedAppointmentForHistory(appointment)
+    setLoadingHistory(true)
+    setShowHistoryModal(true)
+
+    // Fetch change history for this appointment
+    const historyRef = ref(db, `changesHistory/${appointment.key}/${appointment.id}`)
+    onValue(
+      historyRef,
+      (snapshot) => {
+        const historyData = snapshot.val()
+        if (historyData) {
+          // Convert to array and sort by timestamp descending
+          const historyArray = Object.entries(historyData)
+            .map(([id, data]) => ({
+              id,
+              ...data,
+            }))
+            .sort((a, b) => {
+              // Handle case where timestamp might be a Firebase server timestamp object
+              const timeA = a.timestamp && typeof a.timestamp === "object" ? a.timestamp.seconds * 1000 : a.timestamp
+              const timeB = b.timestamp && typeof b.timestamp === "object" ? b.timestamp.seconds * 1000 : b.timestamp
+              return timeB - timeA
+            })
+
+          setAppointmentHistory(historyArray)
+        } else {
+          setAppointmentHistory([])
+        }
+        setLoadingHistory(false)
+      },
+      {
+        onlyOnce: true,
+      },
+    )
   }
 
   // Edit Appointment
   const handleEdit = (appointment) => {
-    setEditingAppointment(appointment)
+    setEditingAppointment({ ...appointment })
   }
 
   const handleEditFormChange = (e) => {
@@ -152,18 +261,72 @@ const AppointmentsPage = () => {
     }))
   }
 
-  const handleUpdateAppointment = (e) => {
+  const handleUpdateAppointment = async (e) => {
     e.preventDefault()
-    const { key, id, ...updatedData } = editingAppointment
-    const appointmentRef = ref(db, `appointments/${key}/${id}`)
-    update(appointmentRef, updatedData)
-      .then(() => {
+
+    try {
+      const { key, id, ...updatedData } = editingAppointment
+      const appointmentRef = ref(db, `appointments/${key}/${id}`)
+
+      // Find the original appointment to compare changes
+      const originalAppointment = appointments.find((app) => app.id === id && app.key === key)
+
+      if (!originalAppointment) {
+        throw new Error("Original appointment not found")
+      }
+
+      // Identify what changed
+      const changes = []
+      Object.keys(updatedData).forEach((field) => {
+        if (JSON.stringify(originalAppointment[field]) !== JSON.stringify(updatedData[field])) {
+          changes.push({
+            field,
+            from: originalAppointment[field],
+            to: updatedData[field],
+          })
+        }
+      })
+
+      // Only proceed if there are actual changes
+      if (changes.length > 0) {
+        // First record changes to history
+        await recordChangesToHistory(originalAppointment, "edit", changes)
+
+        // Then update the appointment
+        await update(appointmentRef, updatedData)
         console.log("Appointment updated successfully")
-        setEditingAppointment(null)
-      })
-      .catch((error) => {
-        console.error("Error updating appointment:", error)
-      })
+      } else {
+        console.log("No changes detected")
+      }
+
+      setEditingAppointment(null)
+    } catch (error) {
+      console.error("Error updating appointment:", error)
+      alert("Failed to update appointment. Please try again.")
+    }
+  }
+
+  // Format date for display
+  const formatDate = (timestamp) => {
+    if (!timestamp) return "N/A"
+
+    // Handle Firebase server timestamp object
+    if (typeof timestamp === "object" && timestamp !== null) {
+      if (timestamp.seconds) {
+        return new Date(timestamp.seconds * 1000).toLocaleString()
+      }
+      return "Pending..."
+    }
+
+    const date = new Date(timestamp)
+    return date.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
   }
 
   return (
@@ -172,13 +335,18 @@ const AppointmentsPage = () => {
 
       {/* Search Input */}
       <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search by doctor, message, name, or phone"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="form-control"
-        />
+        <div className="input-group">
+          <span className="input-group-text bg-white">
+            <i className="fas fa-search text-muted"></i>
+          </span>
+          <input
+            type="text"
+            placeholder="Search by doctor, message, name, or phone"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="form-control border-start-0"
+          />
+        </div>
       </div>
 
       {/* Filter Inputs */}
@@ -219,18 +387,20 @@ const AppointmentsPage = () => {
         </div>
       </div>
 
-      {/* Today's Appointments Button */}
-      <button onClick={() => setSelectedDate(today)} className="btn btn-primary mb-4">
-        Today Appointments
-      </button>
-
-      {/* Export to Excel Button */}
-      <button onClick={handleExport} className="btn btn-success mb-4 float-end">
-        Export to Excel
-      </button>
+      {/* Action Buttons */}
+      <div className="d-flex flex-wrap justify-content-between mb-4">
+        <button onClick={() => setSelectedDate(today)} className="btn btn-primary mb-2">
+          <FaCalendarDay className="me-2" />
+          Today Appointments
+        </button>
+        <button onClick={handleExport} className="btn btn-success mb-2">
+          <FaFileExport className="me-2" />
+          Export to Excel
+        </button>
+      </div>
 
       {/* Totals Display */}
-      <div className="total-summary">
+      <div className="total-summary mb-4">
         <h3>Summary</h3>
         <div className="total-item">
           <span className="total-label">Total Price:</span>
@@ -341,15 +511,22 @@ const AppointmentsPage = () => {
                   </div>
 
                   <div className="mt-3 pt-2 border-top d-flex justify-content-between">
-                    <button onClick={() => handleEdit(appointment)} className="btn btn-primary">
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleMoveToBin(appointment.key, appointment.id)}
-                      className="btn btn-warning"
-                    >
-                      Move to Bin
-                    </button>
+                    <div>
+                      <button onClick={() => handleEdit(appointment)} className="btn btn-primary me-2">
+                        <FaEdit className="me-1" /> Edit
+                      </button>
+                      <button onClick={() => handleViewHistory(appointment)} className="btn btn-info">
+                        <FaHistory className="me-1" /> History
+                      </button>
+                    </div>
+                    <div>
+                      <button onClick={() => handleMoveToBin(appointment)} className="btn btn-warning me-2">
+                        Move to Bin
+                      </button>
+                      <button onClick={() => handleDelete(appointment)} className="btn btn-danger">
+                        <FaTrash className="me-1" /> Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -357,7 +534,9 @@ const AppointmentsPage = () => {
           ))
         ) : (
           <div className="col-12">
-            <p className="text-center text-muted">No appointments found for the selected criteria.</p>
+            <div className="alert alert-info text-center">
+              <p className="mb-0">No appointments found for the selected criteria.</p>
+            </div>
           </div>
         )}
       </div>
@@ -563,6 +742,138 @@ const AppointmentsPage = () => {
         </div>
       )}
 
+      {/* Change History Modal */}
+      {showHistoryModal && (
+        <div className="modal">
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header bg-info text-white">
+                <h2>
+                  <FaHistory className="me-2" />
+                  Change History
+                </h2>
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={() => setShowHistoryModal(false)}
+                ></button>
+              </div>
+              <div className="modal-body">
+                {loadingHistory ? (
+                  <div className="text-center p-4">
+                    <div className="spinner-border text-info" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-3">Loading change history...</p>
+                  </div>
+                ) : appointmentHistory.length > 0 ? (
+                  <div className="history-timeline">
+                    {appointmentHistory.map((history) => (
+                      <div key={history.id} className="history-item">
+                        <div className="history-time">
+                          <div className="history-dot"></div>
+                          <div className="history-date">{formatDate(history.timestamp)}</div>
+                        </div>
+                        <div className="history-content">
+                          <div className="history-card">
+                            <div className="history-header">
+                              <span
+                                className={`badge ${
+                                  history.actionType === "edit"
+                                    ? "bg-primary"
+                                    : history.actionType === "delete"
+                                      ? "bg-danger"
+                                      : "bg-warning"
+                                }`}
+                              >
+                                {history.actionType === "edit"
+                                  ? "Edit"
+                                  : history.actionType === "delete"
+                                    ? "Delete"
+                                    : "Move to Bin"}
+                              </span>
+                              <span className="history-user">
+                                By: {history.enteredByName || history.enteredByEmail || "Unknown User"}
+                              </span>
+                            </div>
+                            <div className="history-changes">
+                              {history.actionType === "delete" ? (
+                                <div className="deleted-appointment-data">
+                                  <p className="mb-2 fw-bold">Deleted Appointment Details:</p>
+                                  <ul className="list-unstyled mb-0">
+                                    <li>
+                                      <strong>Name:</strong> {history.appointmentData?.name || "N/A"}
+                                    </li>
+                                    <li>
+                                      <strong>Date:</strong> {history.appointmentData?.appointmentDate || "N/A"}
+                                    </li>
+                                    <li>
+                                      <strong>Time:</strong> {history.appointmentData?.appointmentTime || "N/A"}
+                                    </li>
+                                    <li>
+                                      <strong>Doctor:</strong> {history.appointmentData?.doctor || "N/A"}
+                                    </li>
+                                    <li>
+                                      <strong>Phone:</strong> {history.appointmentData?.phone || "N/A"}
+                                    </li>
+                                    {history.appointmentData?.price && (
+                                      <li>
+                                        <strong>Price:</strong> ₹{history.appointmentData.price}
+                                      </li>
+                                    )}
+                                    {history.appointmentData?.consultantAmount && (
+                                      <li>
+                                        <strong>Consultant Amount:</strong> ₹{history.appointmentData.consultantAmount}
+                                      </li>
+                                    )}
+                                    {history.appointmentData?.productAmount && (
+                                      <li>
+                                        <strong>Product Amount:</strong> ₹{history.appointmentData.productAmount}
+                                      </li>
+                                    )}
+                                    {history.appointmentData?.productDescription && (
+                                      <li>
+                                        <strong>Product Description:</strong>{" "}
+                                        {history.appointmentData.productDescription}
+                                      </li>
+                                    )}
+                                  </ul>
+                                </div>
+                              ) : (
+                                <ul className="list-unstyled mb-0">
+                                  {history.changes &&
+                                    history.changes.map((change, index) => (
+                                      <li key={index} className="history-change-item">
+                                        <FaEdit className="me-2 text-muted" />
+                                        <strong>{change.field}</strong> changed from{" "}
+                                        <span className="text-danger">{change.from || "empty"}</span> to{" "}
+                                        <span className="text-success">{change.to || "empty"}</span>
+                                      </li>
+                                    ))}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center p-4">
+                    <p className="text-muted">No change history found for this appointment.</p>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowHistoryModal(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom CSS for hover effect and modal */}
       <style jsx>{`
         .hover-shadow:hover {
@@ -586,6 +897,9 @@ const AppointmentsPage = () => {
           margin: 5% auto;
           max-width: 700px;
           width: 90%;
+        }
+        .modal-dialog.modal-lg {
+          max-width: 900px;
         }
         .modal-content {
           background-color: #fff;
@@ -622,6 +936,12 @@ const AppointmentsPage = () => {
         }
         .btn-close:hover {
           color: #343a40;
+        }
+        .btn-close-white {
+          color: white;
+        }
+        .btn-close-white:hover {
+          color: #f8f9fa;
         }
         /* Optional: Scrollbar styling for better UX */
         .modal-content::-webkit-scrollbar {
@@ -726,6 +1046,89 @@ const AppointmentsPage = () => {
         .badge {
           padding: 5px 8px;
           font-weight: 500;
+        }
+        
+        /* History timeline styles */
+        .history-timeline {
+          position: relative;
+          padding-left: 30px;
+        }
+        
+        .history-timeline::before {
+          content: '';
+          position: absolute;
+          left: 10px;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background-color: #dee2e6;
+        }
+        
+        .history-item {
+          position: relative;
+          margin-bottom: 20px;
+        }
+        
+        .history-time {
+          position: relative;
+          margin-bottom: 8px;
+        }
+        
+        .history-dot {
+          position: absolute;
+          left: -30px;
+          top: 5px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #17a2b8;
+          border: 3px solid #fff;
+          box-shadow: 0 0 0 2px #17a2b8;
+        }
+        
+        .history-date {
+          font-size: 0.85rem;
+          color: #6c757d;
+          font-weight: 500;
+        }
+        
+        .history-card {
+          background-color: #f8f9fa;
+          border-radius: 8px;
+          padding: 15px;
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        
+        .history-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        
+        .history-user {
+          font-size: 0.85rem;
+          color: #6c757d;
+        }
+        
+        .history-changes {
+          font-size: 0.95rem;
+        }
+        
+        .history-change-item {
+          padding: 8px 0;
+          border-bottom: 1px dashed #dee2e6;
+        }
+        
+        .history-change-item:last-child {
+          border-bottom: none;
+        }
+        
+        .deleted-appointment-data {
+          background-color: #fff;
+          padding: 10px;
+          border-radius: 5px;
+          border-left: 3px solid #dc3545;
         }
       `}</style>
     </div>
