@@ -220,7 +220,7 @@ export default function Staff() {
         message += `\n• Email: ${appointmentData.email}`;
       }
 
-      const apiResponse = await fetch("https://wa.medblisss.com/send-text", {
+      const apiResponse = await fetch("https://a.infispark.in/send-text", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
