@@ -109,7 +109,7 @@ Team Medzeal
     };
     
     try {
-      await fetch("https://wa.medblisss.com/send-image-url", {
+      await fetch("https://a.infispark.in/send-image-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
