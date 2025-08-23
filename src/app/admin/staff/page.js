@@ -1,57 +1,23 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React from 'react';
 import Link from "next/link";
-import { db } from "../../../lib/firebaseConfig";
-import { ref, onValue, off } from "firebase/database";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faCalendarPlus,
   faBookOpen,
   faCheckCircle,
-  faUserCheck,
   faHistory,
   faFileInvoice,
   faBoxOpen,
   faCalendarDay,
   faPlusCircle,
-  faStore,
-  faUsers,
 } from "@fortawesome/free-solid-svg-icons";
 
 const AdminDashboard = () => {
-  const [todayAppointmentsCount, setTodayAppointmentsCount] = useState(0);
-
-  useEffect(() => {
-    const appointmentsRef = ref(db, "appointments");
-    const fetchAppointments = (snapshot) => {
-      const appointments = snapshot.val();
-      const today = new Date().toISOString().split("T")[0];
-      if (appointments) {
-        const allAppointments = Object.entries(appointments).flatMap(
-          ([key, appointment]) =>
-            Object.entries(appointment).map(([id, details]) => details)
-        );
-        const todayAppointments = allAppointments.filter(
-          (appointment) => appointment.appointmentDate === today
-        ).length;
-        setTodayAppointmentsCount(todayAppointments);
-      }
-    };
-    onValue(appointmentsRef, fetchAppointments);
-    return () => off(appointmentsRef, fetchAppointments);
-  }, []);
-
   return (
     <div className="container-fluid p-4 admin-dashboard">
       {/* Header Section */}
       <header className="mb-5 text-center">
         <h1 className="display-4 fw-bold text-primary mb-3">Staff Dashboard</h1>
-        <div className="dashboard-summary d-flex justify-content-center gap-4">
-          <div className="summary-card bg-success text-white p-4 rounded-3 shadow-lg">
-            <h5 className="mb-2">Todays Appointments</h5>
-            <div className="display-4 fw-bold">{todayAppointmentsCount}</div>
-          </div>
-        </div>
       </header>
 
       {/* Main Content */}
@@ -60,13 +26,9 @@ const AdminDashboard = () => {
           { title: "Book Appointment", icon: faBookOpen, link: "/admin/directbooking", color: "primary" },
           { title: "ADD Amount", icon: faBoxOpen, link: "/admin/approval", color: "danger" },
           { title: "Online Appointments", icon: faCheckCircle, link: "/admin/onlinebooking", color: "success" },
-          
           { title: "Today Appointments", icon: faCalendarDay, link: "/admin/todayattend", color: "info" },
           { title: "User History", icon: faHistory, link: "/admin/userhistory", color: "dark" },
-          // { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
           { title: "Download Invoice", icon: faFileInvoice, link: "/admin/invoice", color: "secondary" },
-          // { title: "Add Vendor", icon: faStore, link: "/admin/vendorentry", color: "dark" },
-          // { title: "All Vendors & Add Products", icon: faUsers, link: "/admin/vendors", color: "success" },
         ].map((item, index) => (
           <div key={index} className="col-xxl-3 col-lg-4 col-md-6">
             <Link href={item.link} className="text-decoration-none">

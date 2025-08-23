@@ -8,6 +8,7 @@ import { Spinner, Button, Table, Form } from "react-bootstrap"
 import jsPDF from "jspdf"
 import "jspdf-autotable"
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
+import html2canvas from "html2canvas"
 
 const TodayAttendedInvoice = () => {
   const [appointments, setAppointments] = useState([])
@@ -97,53 +98,56 @@ const TodayAttendedInvoice = () => {
     setSelectedDate(e.target.value)
   }
 
-  const generatePDF = () => {
-    const pdf = new jsPDF("p", "pt", "a4")
-    const invoice = invoiceRef.current
+  const generatePDF = async () => {
+    const element = invoiceRef.current
+    const canvas = await html2canvas(element, { scale: 2 })
+    const imgData = canvas.toDataURL("image/jpeg", 1.0)
+    const pdf = new jsPDF("p", "mm", "a4")
+    const imgWidth = 210
+    const pageHeight = 297
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    let heightLeft = imgHeight
+    let position = 0
 
-    pdf.html(invoice, {
-      callback: (doc) => {
-        doc.save(`Invoice_${selectedDate}.pdf`)
-      },
-      margin: [20, 20, 20, 20],
-      autoPaging: "text",
-      html2canvas: { scale: 0.5 },
-      x: 0,
-      y: 0,
-      width: 595 - 40,
-      windowWidth: invoice.scrollWidth,
-    })
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft >= 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+    pdf.save(`Invoice_${selectedDate}.pdf`)
   }
 
-  // Helper: Generate PDF blob from invoice content
-  const generatePDFBlob = () => {
-    return new Promise((resolve, reject) => {
-      const pdf = new jsPDF("p", "pt", "a4")
-      const invoice = invoiceRef.current
-      pdf.html(invoice, {
-        callback: (doc) => {
-          try {
-            const blob = doc.output("blob")
-            resolve(blob)
-          } catch (error) {
-            reject(error)
-          }
-        },
-        margin: [20, 20, 20, 20],
-        autoPaging: "text",
-        html2canvas: { scale: 0.5 },
-        x: 0,
-        y: 0,
-        width: 595 - 40,
-        windowWidth: invoice.scrollWidth,
-      })
-    })
+  const generatePDFBlob = async () => {
+    const element = invoiceRef.current
+    const canvas = await html2canvas(element, { scale: 2 })
+    const imgData = canvas.toDataURL("image/jpeg", 1.0)
+    const pdf = new jsPDF("p", "mm", "a4")
+    const imgWidth = 210
+    const pageHeight = 297
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    let heightLeft = imgHeight
+    let position = 0
+
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight)
+    heightLeft -= pageHeight
+
+    while (heightLeft >= 0) {
+      position = heightLeft - imgHeight
+      pdf.addPage()
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+    }
+
+    return pdf.output("blob")
   }
 
-  // Upload PDF to Firebase Storage and send invoice via API with professional message
-  const handleSendInvoice = async () => {
-    setSending(true)
+  const sendInvoice = async (phoneNumber) => {
     try {
+      setSending(true)
       const pdfBlob = await generatePDFBlob()
       const storage = getStorage()
       const fileName = `Invoice_${selectedDate}_${Date.now()}.pdf`
@@ -151,12 +155,9 @@ const TodayAttendedInvoice = () => {
       await uploadBytes(fileRef, pdfBlob)
       const downloadUrl = await getDownloadURL(fileRef)
 
-      // Calculate grand total
       const grandTotal = totalCash + totalOnline + totalConsultant + totalProductAmount
-      // Format selected date for the message
       const formattedDate = new Date(selectedDate).toLocaleDateString()
 
-      // Build a professional message with the calculations
       const message = `
 Please find attached the invoice for the attended appointments on ${formattedDate}.
 
@@ -171,13 +172,13 @@ Thank you for your business.
 MedZeal`
 
       const payload = {
-        token: "99583991572",
-        number: "917738408252",
+        token: "99583991573",
+        number: phoneNumber,
         imageUrl: downloadUrl,
         caption: message,
       }
 
-      const response = await fetch("https://wa.medblisss.com/send-image-url", {
+      const response = await fetch("https://a.infispark.in/send-image-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -211,33 +212,39 @@ MedZeal`
 
   return (
     <div className="container mt-5 mb-5">
-      {/* Header and Buttons */}
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-center mb-4">
         <h1 className="display-4">
           <FaClinicMedical className="me-2 text-primary" />
           Attended Appointments Report
         </h1>
-        <div className="d-flex align-items-center mt-3 mt-md-0">
-          <Form.Group controlId="dateFilter" className="me-3">
+        <div className="d-flex flex-wrap align-items-center mt-3 mt-md-0">
+          <Form.Group controlId="dateFilter" className="me-3 mb-2 mb-md-0">
             <Form.Label className="mb-1">Select Date:</Form.Label>
             <Form.Control type="date" value={selectedDate} onChange={handleDateChange} />
           </Form.Group>
-          <Button variant="success" onClick={generatePDF} className="d-flex align-items-center mt-3 mt-md-0">
+          <Button variant="success" onClick={generatePDF} className="d-flex align-items-center me-2 mb-2 mb-md-0">
             <FaFileDownload className="me-2" />
             Download PDF
           </Button>
           <Button
             variant="primary"
-            onClick={handleSendInvoice}
-            className="d-flex align-items-center mt-3 mt-md-0 ms-3"
+            onClick={() => sendInvoice("917738408252")} // Zainab Mam's number
+            className="d-flex align-items-center me-2 mb-2 mb-md-0"
             disabled={sending}
           >
-            {sending ? "Sending..." : "Send Invoice to Zainab Mam"}
+            {sending ? "Sending..." : "Send to Zainab Mam"}
+          </Button>
+          <Button
+            variant="info"
+            onClick={() => sendInvoice("918907866786")} // Meraj Sir's number
+            className="d-flex align-items-center mb-2 mb-md-0"
+            disabled={sending}
+          >
+            {sending ? "Sending..." : "Send to Meraj Sir"}
           </Button>
         </div>
       </div>
 
-      {/* Invoice Content */}
       <div ref={invoiceRef} className="p-5 border rounded shadow-sm invoice-container">
         <div className="d-flex justify-content-between align-items-center mb-4">
           <div>
