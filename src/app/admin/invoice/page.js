@@ -227,14 +227,6 @@ MedZeal`
             Download PDF
           </Button>
           <Button
-            variant="primary"
-            onClick={() => sendInvoice("917738408252")} // Zainab Mam's number
-            className="d-flex align-items-center me-2 mb-2 mb-md-0"
-            disabled={sending}
-          >
-            {sending ? "Sending..." : "Send to Zainab Mam"}
-          </Button>
-          <Button
             variant="info"
             onClick={() => sendInvoice("918907866786")} // Meraj Sir's number
             className="d-flex align-items-center mb-2 mb-md-0"
