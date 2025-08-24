@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { getDatabase, ref, onValue } from "firebase/database";
+import { getDatabase, ref, onValue, update } from "firebase/database";
 import { app } from "@/lib/firebaseConfig";
 
 export default function UserAppointmentsList() {
@@ -14,6 +14,15 @@ export default function UserAppointmentsList() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  // State for modal visibility and selected appointment data
+  const [showModal, setShowModal] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState(null);
+  const [modalDate, setModalDate] = useState("");
+  const [modalTime, setModalTime] = useState("");
+  const [modalNote, setModalNote] = useState(""); // New state for the note
+  const [isSending, setIsSending] = useState(false);
+  const [message, setMessage] = useState("");
+
   // Effect to fetch data from Firebase
   useEffect(() => {
     const db = getDatabase(app);
@@ -26,14 +35,35 @@ export default function UserAppointmentsList() {
         ...value,
       }));
 
-      // Sort appointments by date and time in descending order (latest first)
+      // Sort appointments by create_at or submissionDate in descending order (latest first)
       loadedAppointments.sort((a, b) => {
-        // Convert DD/MM/YYYY to a sortable format for accurate sorting
-        const partsA = a.submissionDate.split('/');
-        const dateA = new Date(`${partsA[2]}-${partsA[1]}-${partsA[0]}T${a.submissionTime}`);
+        const dateStringA = a.create_at || a.submissionDate;
+        const dateStringB = b.create_at || b.submissionDate;
+
+        let dateA, dateB;
+
+        // Determine date format and parse accordingly
+        if (dateStringA && dateStringA.includes(',')) {
+          const [datePartA, timePartA] = dateStringA.split(', ');
+          const [dayA, monthA, yearA] = datePartA.split('/');
+          dateA = new Date(`${yearA}-${monthA}-${dayA}T${timePartA}`);
+        } else if (dateStringA) {
+          const [dayA, monthA, yearA] = dateStringA.split('/');
+          dateA = new Date(`${yearA}-${monthA}-${dayA}`);
+        } else {
+          dateA = new Date(0); // A very old date for missing values
+        }
         
-        const partsB = b.submissionDate.split('/');
-        const dateB = new Date(`${partsB[2]}-${partsB[1]}-${partsB[0]}T${b.submissionTime}`);
+        if (dateStringB && dateStringB.includes(',')) {
+          const [datePartB, timePartB] = dateStringB.split(', ');
+          const [dayB, monthB, yearB] = datePartB.split('/');
+          dateB = new Date(`${yearB}-${monthB}-${dayB}T${timePartB}`);
+        } else if (dateStringB) {
+          const [dayB, monthB, yearB] = dateStringB.split('/');
+          dateB = new Date(`${yearB}-${monthB}-${dayB}`);
+        } else {
+          dateB = new Date(0);
+        }
         
         return dateB - dateA;
       });
@@ -44,32 +74,34 @@ export default function UserAppointmentsList() {
     return () => unsubscribe();
   }, []);
 
-  // ✅ FIXED: Effect to apply filters, now handles the DD/MM/YYYY format
+  // Effect to apply filters with fallback logic
   useEffect(() => {
     let result = appointments;
 
     // 1. Apply search filter
     if (searchTerm) {
       result = result.filter(apt =>
-        apt.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        apt.service.toLowerCase().includes(searchTerm.toLowerCase())
+        (apt.name && apt.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (apt.phone && apt.phone.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (apt.service && apt.service.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
 
-    // 2. Apply date range filter
+    // 2. Apply date range filter with create_at fallback
     if (startDate && endDate) {
       result = result.filter(apt => {
-        // apt.submissionDate is in "DD/MM/YYYY" format.
-        // We need to convert it to "YYYY-MM-DD" to compare with the filter's dates.
-        const parts = apt.submissionDate.split('/'); // e.g., ["23", "08", "2025"]
-        if (parts.length !== 3) return false; // Skip if the format is wrong
+        const dateToFilter = apt.create_at || apt.submissionDate;
+        
+        if (!dateToFilter) return false;
 
-        // Re-format to "YYYY-MM-DD"
-        const formattedSubmissionDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        const datePart = dateToFilter.split(',')[0];
+        const parts = datePart.split('/');
+        
+        if (parts.length !== 3) return false;
 
-        // Now the comparison will work correctly!
-        return formattedSubmissionDate >= startDate && formattedSubmissionDate <= endDate;
+        const formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+
+        return formattedDate >= startDate && formattedDate <= endDate;
       });
     }
 
@@ -77,7 +109,6 @@ export default function UserAppointmentsList() {
   }, [searchTerm, startDate, endDate, appointments]);
 
   // --- Helper functions for date buttons ---
-
   const getFormattedDate = (date) => {
     return date.toISOString().split('T')[0];
   };
@@ -100,6 +131,119 @@ export default function UserAppointmentsList() {
       setSearchTerm("");
       setStartDate("");
       setEndDate("");
+  };
+
+  // --- Acknowledgment Modal Functions ---
+
+  const handleAcknowledgeClick = (appointment) => {
+    setSelectedAppointment(appointment);
+    // Use appointmentDate as the primary, with submissionDate as fallback
+    const treatmentDate = appointment.appointmentDate || appointment.submissionDate;
+    const treatmentTime = appointment.appointmentTime || appointment.submissionTime;
+    
+    // Convert DD/MM/YYYY to YYYY-MM-DD for the date input
+    if (treatmentDate) {
+        const [day, month, year] = treatmentDate.split('/');
+        setModalDate(`${year}-${month}-${day}`);
+    } else {
+        setModalDate("");
+    }
+    // Set the time for the time input
+    if (treatmentTime) {
+        // Convert "hh:mm:ss am/pm" to "HH:mm" for the time input
+        const [timePart, ampm] = treatmentTime.split(' ');
+        const [hours, minutes] = timePart.split(':');
+        let hours24 = parseInt(hours);
+        if (ampm === 'pm' && hours24 < 12) {
+            hours24 += 12;
+        }
+        if (ampm === 'am' && hours24 === 12) {
+            hours24 = 0;
+        }
+        setModalTime(`${String(hours24).padStart(2, '0')}:${minutes}`);
+    } else {
+        setModalTime("");
+    }
+    
+    // Reset note field
+    setModalNote("");
+
+    setShowModal(true);
+  };
+
+  const handleModalClose = () => {
+    setShowModal(false);
+    setSelectedAppointment(null);
+    setMessage("");
+    setModalNote("");
+  };
+
+  const sendAcknowledgement = async () => {
+    if (!selectedAppointment) return;
+
+    setIsSending(true);
+    setMessage("Sending acknowledgement...");
+
+    try {
+        const [year, month, day] = modalDate.split('-');
+        const formattedDate = `${day}/${month}/${year}`;
+
+        // Convert 24-hour time to 12-hour format for the message
+        const [hours, minutes] = modalTime.split(':');
+        const d = new Date();
+        d.setHours(hours, minutes, 0);
+        const formattedTime = d.toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+
+        // Create the professional message with the optional note
+        let whatsappMessage = `Hello *${selectedAppointment.name}*,\n\nThis is to confirm your appointment at Medzeal. Below are the details:\n\n*Service:* ${selectedAppointment.service}\n*Confirmed Date:* ${formattedDate}\n*Confirmed Time:* ${formattedTime}\n\n`;
+
+        if (modalNote) {
+            whatsappMessage += `*Note:* ${modalNote}\n\n`;
+        }
+
+        whatsappMessage += `We look forward to seeing you.\nThank you,\n*Medzeal Team*`;
+
+        // Send the message via WhatsApp API
+        const apiResponse = await fetch("https://a.infispark.in/send-text", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token: "99583991572",
+                number: "91" + selectedAppointment.phone,
+                message: whatsappMessage,
+            }),
+        });
+
+        if (!apiResponse.ok) {
+            throw new Error('Failed to send WhatsApp message.');
+        }
+
+        // Update Firebase with the new details and acknowledgment status
+        const db = getDatabase(app);
+        const updates = {};
+        updates[`userappoinment/${selectedAppointment.id}/akno`] = true;
+        updates[`userappoinment/${selectedAppointment.id}/appointmentDate`] = formattedDate;
+        updates[`userappoinment/${selectedAppointment.id}/appointmentTime`] = formattedTime;
+        if (modalNote) {
+            updates[`userappoinment/${selectedAppointment.id}/acknowledgementNote`] = modalNote;
+        }
+
+        await update(ref(db), updates);
+
+        setMessage("Acknowledgement sent and Firebase updated successfully!");
+        setTimeout(handleModalClose, 2000);
+    } catch (error) {
+        console.error("Error sending acknowledgment:", error);
+        setMessage("Error: Serjil bhai plz login Medzeal Whatsapp");
+    } finally {
+        setIsSending(false);
+    }
   };
 
 
@@ -146,19 +290,103 @@ export default function UserAppointmentsList() {
                 <h2 className="cardName">{appointment.name}</h2>
                 <p><strong>📞 Phone:</strong> {appointment.phone}</p>
                 <p><strong>🛠️ Service:</strong> {appointment.service}</p>
-                <p><strong>💬 Message:</strong> {appointment.message}</p>
+                {appointment.message && (
+                    <p><strong>💬 Message:</strong> {appointment.message}</p>
+                )}
                 {appointment.coupon && (
                   <p className="coupon"><strong>🎟️ Coupon:</strong> {appointment.coupon}</p>
                 )}
-                <div className="dateTime">
-                    <span>🗓️ {appointment.submissionDate}</span>
-                    <span>⏰ {appointment.submissionTime}</span>
+                
+                {/* Display Treatment Date and Time, with a fallback to submissionDate */}
+                <div className="treatment-details">
+                    <p>
+                        <strong>🗓️ Treatment Date:</strong> 
+                        {appointment.appointmentDate || appointment.submissionDate || 'N/A'}
+                    </p>
+                    <p>
+                        <strong>⏰ Treatment Time:</strong>
+                        {appointment.appointmentTime || appointment.submissionTime || 'N/A'}
+                    </p>
+                </div>
+                
+                {/* Display Booked At with fallback logic */}
+                <div className="booked-at">
+                    <p>
+                        <strong>✅ Booked At:</strong>
+                        {appointment.create_at
+                            ? ` ${appointment.create_at}`
+                            : (appointment.submissionDate && appointment.submissionTime
+                                ? ` ${appointment.submissionDate} at ${appointment.submissionTime}`
+                                : 'N/A')
+                        }
+                    </p>
+                </div>
+                <div className="card-actions">
+                    <button 
+                        className={`acknowledge-button ${appointment.akno ? 'acknowledged' : ''}`}
+                        onClick={() => handleAcknowledgeClick(appointment)}
+                        disabled={appointment.akno}
+                    >
+                        {appointment.akno ? 'Acknowledged' : 'Acknowledge'}
+                    </button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {showModal && (
+        <div className="modal-overlay">
+            <div className="modal-content">
+                <div className="modal-header">
+                    <h3>Acknowledge Appointment</h3>
+                    <button className="modal-close" onClick={handleModalClose}>&times;</button>
+                </div>
+                <div className="modal-body">
+                    <p>Confirm the details for **{selectedAppointment.name}** before sending the acknowledgment.</p>
+                    <div className="form-group">
+                        <label>Treatment Date</label>
+                        <input
+                            type="date"
+                            value={modalDate}
+                            onChange={(e) => setModalDate(e.target.value)}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Treatment Time</label>
+                        <input
+                            type="time"
+                            value={modalTime}
+                            onChange={(e) => setModalTime(e.target.value)}
+                        />
+                    </div>
+                    {/* NEW: Note input field */}
+                    <div className="form-group">
+                        <label>Add a Note (optional)</label>
+                        <textarea
+                            rows="3"
+                            value={modalNote}
+                            onChange={(e) => setModalNote(e.target.value)}
+                            placeholder="e.g., Please bring your medical records."
+                        ></textarea>
+                    </div>
+                    {isSending && <p className="status-message">Sending...</p>}
+                    {message && <p className="status-message">{message}</p>}
+                </div>
+                <div className="modal-footer">
+                    <button 
+                        className="modal-button primary" 
+                        onClick={sendAcknowledgement}
+                        disabled={isSending}
+                    >
+                        Send & Confirm
+                    </button>
+                    <button className="modal-button secondary" onClick={handleModalClose}>Cancel</button>
+                </div>
+            </div>
+        </div>
+      )}
 
       <style jsx>{`
         /* Styles remain the same */
@@ -299,22 +527,139 @@ export default function UserAppointmentsList() {
             border-radius: 6px;
             margin-top: 1rem;
         }
-        .dateTime {
+        .treatment-details, .booked-at {
             border-top: 1px solid #e9ecef;
             margin-top: 1rem;
             padding-top: 1rem;
-            display: flex;
-            justify-content: space-between;
             color: #6c757d;
             font-size: 0.9rem;
         }
-        .noResults {
-          text-align: center;
-          font-size: 1.2rem;
-          color: #6c757d;
-          padding: 4rem;
-          background: #fff;
-          border-radius: 12px;
+        .booked-at p {
+            margin: 0;
+            padding: 0;
+        }
+        .card-actions {
+            margin-top: 1.5rem;
+            text-align: right;
+        }
+        .acknowledge-button {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .acknowledge-button:hover:not(:disabled) {
+            background-color: #218838;
+        }
+        .acknowledge-button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 500px;
+            font-family: inherit;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .modal-header h3 {
+            margin: 0;
+            color: #212529;
+            font-size: 1.5rem;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 2rem;
+            cursor: pointer;
+            color: #6c757d;
+        }
+        .modal-body .form-group {
+            margin-bottom: 1rem;
+        }
+        .modal-body label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        .modal-body input, .modal-body textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        .modal-body textarea {
+            resize: vertical;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e9ecef;
+            margin-top: 1.5rem;
+        }
+        .modal-button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .modal-button.primary {
+            background-color: #007bff;
+            color: #fff;
+        }
+        .modal-button.primary:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        .modal-button.secondary {
+            background-color: #f8f9fa;
+            color: #6c757d;
+            border: 1px solid #ced4da;
+        }
+        .modal-button.secondary:hover {
+            background-color: #e2e6ea;
+        }
+        .modal-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status-message {
+            text-align: center;
+            font-weight: bold;
+            color: #28a745;
+            margin-top: 1rem;
         }
       `}</style>
     </>
