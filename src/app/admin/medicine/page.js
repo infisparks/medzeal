@@ -36,7 +36,7 @@ import { GoogleGenAI } from "@google/genai";
 const GEMINI_API_KEY = "AIzaSyAl5dV0c_PCj09rujWaq6ZAgupMY9f5wTM";
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-// --- Core Gemini API Call Function for Structured Output ---
+// --- Core Gemini API Call Function for Structured Output (UPDATED PROMPT) ---
 async function getPrescriptionFromAudio(audioBlob) {
   const audioFile = new File([audioBlob], `presc-audio-${uuidv4()}.webm`, { type: 'audio/webm' });
   let uploadedFile = null;
@@ -49,17 +49,17 @@ async function getPrescriptionFromAudio(audioBlob) {
     });
     toast.success("Audio uploaded successfully.", { id: 'gemini-upload-presc' });
 
+    // UPDATED PROMPT: More context, instruction for synthesizing fields, and tolerance for breaks.
     const prompt = `
-        You are a medical scribe. Analyze the provided audio of a doctor dictating a prescription.
-        Extract the following details and return them STRICTLY as a clean JSON object.
-        If a medicine's consumption time is mentioned, map it to one or more of 'Morning', 'Evening', or 'Night'.
-        If a field is not dictated, use a reasonable default or an empty string "".
+        You are a highly efficient medical scribe. Analyze the provided audio, which contains a doctor's dictation of a patient's analysis, symptoms, and treatment plan. The doctor may pause, think, or dictate the information out of order.
 
-        - symptoms: The patient's clinical symptoms.
-        - medicines: An array of medications. Each item must have name, consumptionDays (number of days), time (e.g., "Morning, Evening"), and instruction (e.g., "After Food").
-        - overallInstruction: Any general instructions for the patient.
+        **Your task is to synthesize the key facts from the entire recording and STRICTLY extract them into the following clean JSON structure:**
+        
+        - symptoms: The patient's primary clinical symptoms and chief complaint.
+        - medicines: An array of medications. Each item must have name, consumptionDays (duration in days), time (e.g., "Morning, Evening"), and instruction (e.g., "After Food").
+        - overallInstruction: Any general patient advice, follow-up plan, or lifestyle modifications.
 
-        Ensure all fields are present in the JSON output.
+        If a field is not dictated, return an empty string "" or an empty array [] for medicines.
         Format the output only as JSON.
     `;
 
@@ -126,6 +126,8 @@ async function getPrescriptionFromAudio(audioBlob) {
     }
   }
 }
+// --- END Core Gemini API Call Function ---
+
 
 const DoctorPrescription = () => {
   const router = useRouter();
@@ -249,7 +251,7 @@ const DoctorPrescription = () => {
 
       mediaRecorderRef.current.start();
       setIsRecording(true);
-      toast.info("Recording started... Dictate the full prescription.");
+      toast.info("Recording started... Dictate the full analysis and prescription.");
     } catch (err) {
       toast.error("Failed to start recording. Check microphone permissions.");
       console.error(err);
