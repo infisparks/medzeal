@@ -11,6 +11,7 @@
   "dependencies": {
     "@fortawesome/free-solid-svg-icons": "^6.7.1",
     "@fortawesome/react-fontawesome": "^0.2.2",
+    "@google/genai": "^1.26.0",
     "animate.css": "^4.1.1",
     "axios": "^1.7.7",
     "browser-image-compression": "^2.0.2",
@@ -46,7 +47,9 @@
     "react-tilt": "^1.0.2",
     "react-toastify": "^10.0.6",
     "sharp": "^0.33.2",
+    "sonner": "^2.0.7",
     "swiper": "^11.0.6",
+    "uuid": "^13.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
