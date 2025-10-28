@@ -16,6 +16,7 @@ import {
   faPlusCircle,
   faStore,
   faUsers,
+  faFilePrescription, // Import the new icon
 } from "@fortawesome/free-solid-svg-icons";
 
 const AdminDashboard = () => {
@@ -62,6 +63,9 @@ const AdminDashboard = () => {
           { title: "Online Appointments", icon: faCheckCircle, link: "/admin/onlinebooking", color: "success" },
           
           { title: "Today Appointments", icon: faCalendarDay, link: "/admin/todayattend", color: "info" },
+          // --- ADDED NEW OPTION HERE ---
+          { title: "Add Prescription", icon: faFilePrescription, link: "/admin/medicine", color: "warning" },
+          // -----------------------------
           { title: "User History", icon: faHistory, link: "/admin/userhistory", color: "dark" },
           // { title: "Sell Product", icon: faBoxOpen, link: "/admin/inventrysell", color: "danger" },
           { title: "Download Invoice", icon: faFileInvoice, link: "/admin/invoice", color: "secondary" },
