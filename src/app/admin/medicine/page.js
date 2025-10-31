@@ -1,10 +1,11 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ref, onValue, update, push } from "firebase/database";
-import { db, storage } from "../../../lib/firebaseConfig";
+import { ref, onValue, update } from "firebase/database";
+import { db, storage } from "../../../lib/firebaseConfig"; // Assuming correct path
 import { useRouter } from "next/navigation";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+// Ensure correct paths to your images
 import letterhead from "../../../../public/letterhead.png";
 import front from "../../../../public/front.png";
 import {
@@ -12,123 +13,71 @@ import {
   FaSearch,
   FaUser,
   FaPrescriptionBottleAlt,
-  FaPlusCircle,
   FaTrash,
-  FaArrowLeft,
-  FaMicrophone,
-  FaStop,
-  FaSpinner,
   FaTimes,
   FaHistory,
+  FaCamera,
+  FaDownload,
+  FaFileUpload,
+  FaArrowLeft,
 } from "react-icons/fa";
 import { toast } from "sonner";
 import {
   ref as storageRef,
   uploadBytes,
   getDownloadURL,
+  deleteObject,
 } from "firebase/storage";
 import { v4 as uuidv4 } from "uuid";
 
-// --- Gemini AI Imports & Config ---
-import { GoogleGenAI } from "@google/genai";
+// --- Image Compression Function ---
+/**
+ * Compresses an image file (File or Blob) into a smaller JPEG Blob.
+ * @param {File | Blob} file - The image file to compress.
+ * @returns {Promise<Blob>} The compressed image Blob.
+ */
+const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                // Set max dimensions for reasonable compression, e.g., max width 1200px
+                const maxWidth = 1200; 
+                let width = img.width;
+                let height = img.height;
 
-// WARNING: Storing API keys directly in client-side code is insecure.
-const GEMINI_API_KEY = "AIzaSyAl5dV0c_PCj09rujWaq6ZAgupMY9f5wTM";
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+                if (width > maxWidth) {
+                    height = height * (maxWidth / width);
+                    width = maxWidth;
+                }
 
-// --- Core Gemini API Call Function for Structured Output (UPDATED PROMPT) ---
-async function getPrescriptionFromAudio(audioBlob) {
-  const audioFile = new File([audioBlob], `presc-audio-${uuidv4()}.webm`, { type: 'audio/webm' });
-  let uploadedFile = null;
+                canvas.width = width;
+                canvas.height = height;
 
-  try {
-    toast.loading("Uploading audio to Gemini...", { id: 'gemini-upload-presc' });
-    uploadedFile = await ai.files.upload({
-      file: audioFile,
-      config: { mimeType: 'audio/webm' }
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert canvas content to Blob with JPEG format and reduced quality
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        resolve(blob);
+                    } else {
+                        reject(new Error('Canvas to Blob conversion failed.'));
+                    }
+                }, 'image/jpeg', 0.7); // 0.7 is the compression quality
+            };
+            img.onerror = (error) => reject(error);
+            img.src = event.target.result;
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
     });
-    toast.success("Audio uploaded successfully.", { id: 'gemini-upload-presc' });
+};
+// --- END: Image Compression Function ---
 
-    // UPDATED PROMPT: More context, instruction for synthesizing fields, and tolerance for breaks.
-    const prompt = `
-        You are a highly efficient medical scribe. Analyze the provided audio, which contains a doctor's dictation of a patient's analysis, symptoms, and treatment plan. The doctor may pause, think, or dictate the information out of order.
-
-        **Your task is to synthesize the key facts from the entire recording and STRICTLY extract them into the following clean JSON structure:**
-        
-        - symptoms: The patient's primary clinical symptoms and chief complaint.
-        - medicines: An array of medications. Each item must have name, consumptionDays (duration in days), time (e.g., "Morning, Evening"), and instruction (e.g., "After Food").
-        - overallInstruction: Any general patient advice, follow-up plan, or lifestyle modifications.
-
-        If a field is not dictated, return an empty string "" or an empty array [] for medicines.
-        Format the output only as JSON.
-    `;
-
-    const prescriptionSchema = {
-      type: "object",
-      properties: {
-        symptoms: { type: "string", description: "Clinical symptoms." },
-        medicines: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string", description: "Medicine name/dosage." },
-              consumptionDays: { type: "string", description: "Duration in days (e.g., '7')." },
-              time: { type: "string", description: "Consumption time, comma-separated (e.g., 'Morning, Evening')." },
-              instruction: { type: "string", description: "Specific instruction (e.g., 'Before Food')." },
-            },
-            required: ["name", "consumptionDays", "time", "instruction"],
-          },
-        },
-        overallInstruction: { type: "string", description: "General instructions or follow-up." },
-      },
-      required: ["symptoms", "medicines", "overallInstruction"]
-    };
-
-    toast.loading("Analyzing dictation with AI...", { id: 'gemini-analysis-presc' });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite",
-      contents: [
-        {
-          parts: [
-            { fileData: { mimeType: uploadedFile.mimeType, fileUri: uploadedFile.uri } },
-            { text: prompt }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: prescriptionSchema,
-        maxOutputTokens: 2048,
-      },
-    });
-    toast.success("AI analysis complete!", { id: 'gemini-analysis-presc' });
-
-    if (!response.text) {
-      throw new Error("AI returned an empty response text.");
-    }
-
-    const jsonText = response.text.trim().replace(/^```json|```$/g, '').trim();
-    return JSON.parse(jsonText);
-
-  } catch (error) {
-    console.error("Gemini API Error:", error);
-    toast.error(`AI analysis failed: ${error.message}`, { id: 'gemini-analysis-presc' });
-    throw new Error("Failed to generate prescription from audio.");
-  } finally {
-    if (uploadedFile && uploadedFile.name) {
-      try {
-        await ai.files.delete({ name: uploadedFile.name });
-        console.log(`Cleaned up Gemini file: ${uploadedFile.name}`);
-      } catch (cleanupError) {
-        console.error("Error cleaning up Gemini file:", cleanupError);
-      }
-    }
-  }
-}
-// --- END Core Gemini API Call Function ---
-
-
+// --- START: Component Definition ---
 const DoctorPrescription = () => {
   const router = useRouter();
 
@@ -143,30 +92,24 @@ const DoctorPrescription = () => {
   // Prescription form state
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [isPrescriptionModalOpen, setIsPrescriptionModalOpen] = useState(false);
-  const [symptoms, setSymptoms] = useState("");
-  const [showMedicineDetails, setShowMedicineDetails] = useState(false);
-  const [medicines, setMedicines] = useState([]);
-  const [overallInstruction, setOverallInstruction] = useState("");
   const [prescriptionSaved, setPrescriptionSaved] = useState(false);
   
+  // --- Photo/Image State (Primary Focus) ---
+  // Stores file objects for new uploads: [{ file: File, preview: string, id: string }]
+  const [newPhotos, setNewPhotos] = useState([]);
+  // Stores saved photo objects: [{ url: string, storagePath: string }]
+  const [existingPhotos, setExistingPhotos] = useState([]); 
+  // --- END Photo/Image State ---
+
   // Previous history modal state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyModalItems, setHistoryModalItems] = useState([]);
   const [fullScreenPhoto, setFullScreenPhoto] = useState(null);
 
-  // --- Voice/Audio State ---
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  // --- END Voice/Audio State ---
-
-  // --- Medicine Autocomplete State ---
-  const [allMedicineNames, setAllMedicineNames] = useState([]);
-
   // Refs for hidden PDF pages
   const frontRef = useRef(null);
   const prescriptionRef = useRef(null);
+  const photoInputRef = useRef(null); // Ref for hidden file input
 
   // --- Firebase Data Fetching ---
 
@@ -190,20 +133,6 @@ const DoctorPrescription = () => {
     return () => unsubscribe();
   }, [selectedDate]);
 
-  // 2. Fetch all unique medicine names for autocomplete
-  useEffect(() => {
-    const medicinesRef = ref(db, "medicines");
-    const unsubscribe = onValue(medicinesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setAllMedicineNames(Object.values(data));
-      } else {
-        setAllMedicineNames([]);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
   // Filter appointments based on search term
   const filteredAppointments = useMemo(() => {
     const lowerSearch = searchTerm.toLowerCase();
@@ -217,102 +146,94 @@ const DoctorPrescription = () => {
       );
     });
   }, [appointments, searchTerm]);
+  
+  // --- Photo/Image Handlers ---
 
-  // --- Voice Recording Logic ---
-
-  const startRecording = async () => {
-    if (isRecording || isProcessingAudio) return;
-    try {
-      if (!window.MediaRecorder || !navigator.mediaDevices) {
-        toast.error("Recording is not supported by your browser.");
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        stream.getTracks().forEach(track => track.stop());
-
-        if (audioBlob.size > 0) {
-          processAudio(audioBlob);
-        } else {
-          toast.error("Recording failed or was too short.");
-        }
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-      toast.info("Recording started... Dictate the full analysis and prescription.");
-    } catch (err) {
-      toast.error("Failed to start recording. Check microphone permissions.");
-      console.error(err);
-    }
-  };
-
-  const stopRecording = () => {
-    if (!isRecording || !mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
-    mediaRecorderRef.current.stop();
-    setIsRecording(false);
-  };
-
-  /**
-   * Processes the recorded audio, gets structured data from Gemini, and
-   * updates the form fields.
-   */
-  const processAudio = async (audioBlob) => {
-    setIsProcessingAudio(true);
-
-    try {
-      const aiData = await getPrescriptionFromAudio(audioBlob);
-
-      // --- 1. Update Symptoms and Overall Instruction ---
-      setSymptoms(aiData.symptoms || "");
-      setOverallInstruction(aiData.overallInstruction || "");
-
-      // --- 2. Convert AI Medicine format to Local State format ---
-      const newMedicines = (aiData.medicines || []).map(aiMed => {
-        const times = { morning: false, evening: false, night: false };
-        const timeArray = (aiMed.time || "").split(',').map(t => t.trim().toLowerCase());
-        if (timeArray.includes('morning')) times.morning = true;
-        if (timeArray.includes('evening')) times.evening = true;
-        if (timeArray.includes('night')) times.night = true;
-
-        return {
-          name: aiMed.name || "",
-          consumptionDays: aiMed.consumptionDays || "",
-          times,
-          instruction: aiMed.instruction || "",
+  const handlePhotoUpload = (event) => {
+    if (!selectedAppointment) return;
+    const files = Array.from(event.target.files);
+    
+    files.forEach(file => {
+        const id = uuidv4();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setNewPhotos(prev => [...prev, { file, preview: reader.result, id }]);
         };
-      });
+        reader.readAsDataURL(file);
+    });
 
-      if (newMedicines.length > 0) {
-        setMedicines(newMedicines);
-        setShowMedicineDetails(true);
-      } else {
-        setMedicines([]);
-        setShowMedicineDetails(false);
-      }
-
-      toast.success("AI analysis complete! Form fields updated. Please review and save.");
-
-    } catch (err) {
-      // Error handled in getPrescriptionFromAudio
-      setMedicines([]); // Clear medicines on failure
-    } finally {
-      setIsProcessingAudio(false);
-    }
+    // Clear the input value so the same file can be selected again
+    event.target.value = null; 
   };
 
-  // --- End Voice Recording Logic ---
+  const handleRemovePhoto = (id) => {
+    setNewPhotos(prev => prev.filter(photo => photo.id !== id));
+  };
+  
+  const handleRemoveExistingPhoto = async (storagePath) => {
+    if (!selectedAppointment) return;
+    
+    // 1. Delete from Firebase Storage
+    const photoRef = storageRef(storage, storagePath);
+    try {
+        await deleteObject(photoRef);
+        toast.success("Photo removed from storage.");
+    } catch (error) {
+        console.error("Error deleting photo from storage:", error);
+        toast.error("Failed to delete photo from storage.");
+        return;
+    }
+    
+    // 2. Update local state
+    const updatedExistingPhotos = existingPhotos.filter(photo => photo.storagePath !== storagePath);
+    setExistingPhotos(updatedExistingPhotos);
+    
+    // 3. Update Firebase Realtime Database
+    const appointmentRef = ref(
+        db,
+        `appointments/${selectedAppointment.uid}/${selectedAppointment.appointmentId}`
+    );
+    try {
+        await update(appointmentRef, { 
+            presciption: { 
+                ...(selectedAppointment.presciption || {}),
+                photos: updatedExistingPhotos 
+            }
+        });
+        toast.success("Prescription photos updated in database.");
+        // Also update the selectedAppointment to reflect the change immediately
+        setSelectedAppointment(prev => prev ? ({ ...prev, presciption: { ...prev.presciption, photos: updatedExistingPhotos } }) : null);
+
+    } catch (error) {
+        console.error("Error updating prescription photos:", error);
+        toast.error("Failed to update prescription in database.");
+    }
+  };
+  
+  /**
+   * Uploads new photos after compressing them.
+   */
+  const uploadNewPhotos = async () => {
+    if (!selectedAppointment || newPhotos.length === 0) return [];
+    
+    const uploadPromises = newPhotos.map(async (photo) => {
+        const uniqueId = uuidv4();
+        const storagePath = `prescriptions/${selectedAppointment.uid}/${selectedAppointment.appointmentId}/photo_${uniqueId}.jpeg`;
+        const photoStorageRef = storageRef(storage, storagePath);
+        
+        // --- Compress the image before uploading ---
+        const compressedBlob = await compressImage(photo.file);
+        
+        await uploadBytes(photoStorageRef, compressedBlob, { contentType: 'image/jpeg' });
+        const downloadURL = await getDownloadURL(photoStorageRef);
+        
+        return { url: downloadURL, storagePath };
+    });
+
+    return Promise.all(uploadPromises);
+  };
+  
+  // --- END Photo/Image Handlers ---
 
   // --- Prescription Modal Handlers ---
 
@@ -320,34 +241,18 @@ const DoctorPrescription = () => {
     setSelectedAppointment(null);
     setIsPrescriptionModalOpen(false);
     setPrescriptionSaved(false);
-    if (isRecording) stopRecording(); // Stop recording if open
+    setNewPhotos([]);
+    setExistingPhotos([]);
   };
 
   const resetPrescriptionState = (appointment) => {
     setSelectedAppointment(appointment);
-    setSymptoms(appointment?.presciption?.symptoms || "");
-    setOverallInstruction(appointment?.presciption?.overallInstruction || "");
-
-    const existingMedicines = appointment?.presciption?.medicines || [];
-    if (existingMedicines.length > 0) {
-      setMedicines(existingMedicines);
-      setShowMedicineDetails(true);
-    } else {
-      setMedicines([
-        {
-          name: "",
-          consumptionDays: "",
-          times: { morning: false, evening: false, night: false },
-          instruction: "",
-        },
-      ]);
-      setShowMedicineDetails(false);
-    }
-    // Note: Photos state is no longer managed for new uploads
+    setExistingPhotos(appointment?.presciption?.photos || []);
+    setNewPhotos([]); 
   };
 
   const handleSelectAppointmentForAdd = (appointment) => {
-    resetPrescriptionState({ ...appointment, presciption: undefined }); // Pass undefined presciption to clear fields
+    resetPrescriptionState({ ...appointment, presciption: { photos: [] } }); 
     setIsPrescriptionModalOpen(true);
   };
 
@@ -357,144 +262,79 @@ const DoctorPrescription = () => {
   };
 
   const handleDownloadExistingPrescription = (appointment) => {
-    resetPrescriptionState(appointment);
+    resetPrescriptionState(appointment); 
     setTimeout(() => {
-      generateAndUploadPDF(false); // Only download
+        generateAndDownloadPDF(); // Call without upload/send
     }, 500);
   };
-
-  // --- Medicine Details Functions ---
-  const toggleMedicineDetails = () => {
-    setShowMedicineDetails((prev) => {
-      if (!prev && medicines.length === 0) {
-        setMedicines([
-          {
-            name: "",
-            consumptionDays: "",
-            times: { morning: false, evening: false, night: false },
-            instruction: "",
-          },
-        ]);
-      }
-      return !prev;
-    });
-  };
-
-  const addMedicine = () => {
-    setMedicines([
-      ...medicines,
-      {
-        name: "",
-        consumptionDays: "",
-        times: { morning: false, evening: false, night: false },
-        instruction: "",
-      },
-    ]);
-  };
-
-  const handleRemoveMedicine = (index) => {
-    const newMedicines = medicines.filter((_, i) => i !== index);
-    setMedicines(newMedicines);
-  };
-
-  const handleMedicineChange = (index, field, value) => {
-    const newMedicines = [...medicines];
-    newMedicines[index][field] = value;
-    setMedicines(newMedicines);
-  };
-
-  const handleTimeToggle = (index, time) => {
-    const newMedicines = [...medicines];
-    newMedicines[index].times[time] = !newMedicines[index].times[time];
-    setMedicines(newMedicines);
-  };
-
-  const handleSelectSuggestion = (index, suggestion) => {
-    const newMedicines = [...medicines];
-    newMedicines[index].name = suggestion;
-    setMedicines(newMedicines);
-  };
-
-  // --- Firebase Medicine Saving Helper (NEW) ---
-  const saveNewMedicineName = async (name) => {
-    if (!name || name.trim() === "") return;
-    const isExisting = allMedicineNames.some(
-      (med) => med.toLowerCase() === name.trim().toLowerCase()
-    );
-
-    if (!isExisting) {
-      try {
-        const medicinesRef = ref(db, "medicines");
-        await push(medicinesRef, name.trim());
-        toast.info(`New medicine '${name.trim()}' saved for future reference.`);
-      } catch (error) {
-        console.error("Error saving new medicine name:", error);
-      }
-    }
-  };
   
-  // --- Form Submit Handler ---
+  // --- Form Submit Handler (UPDATED: Removed WhatsApp) ---
   const handleSubmitPrescription = async (e) => {
     e.preventDefault();
-    if (!selectedAppointment || isProcessingAudio) return;
-
-    // 1. Save any new, manually entered medicine names
-    const namesToSave = new Set();
-    medicines.forEach(med => {
-        if (med.name.trim() !== "" && !allMedicineNames.some(n => n.toLowerCase() === med.name.trim().toLowerCase())) {
-            namesToSave.add(med.name.trim());
-        }
-    });
-    for (const name of Array.from(namesToSave)) {
-        await saveNewMedicineName(name);
+    if (!selectedAppointment) return;
+    
+    if (newPhotos.length === 0 && existingPhotos.length === 0) {
+        toast.error("Please upload at least one prescription photo before saving.");
+        return;
     }
 
-    // 2. Prepare Prescription Data
-    const prescriptionData = {
-      symptoms,
-      medicines: showMedicineDetails ? medicines : [],
-      overallInstruction,
-      photos: selectedAppointment.presciption?.photos || [], // Keep existing photos for history/data integrity
-      createdAt: new Date().toISOString(),
-    };
-
-    // 3. Update Firebase
-    const appointmentRef = ref(
-      db,
-      `appointments/${selectedAppointment.uid}/${selectedAppointment.appointmentId}`
-    );
+    const saveToastId = toast.loading("Saving photos and generating PDF...", { id: 'save-presc' });
+    
     try {
-      await update(appointmentRef, { presciption: prescriptionData });
-      toast.success("Prescription saved successfully! Preparing PDF...");
-      setPrescriptionSaved(true);
-      
-      // Update selectedAppointment state with new prescription data to ensure PDF generation is accurate
-      setSelectedAppointment(prev => prev ? ({ ...prev, presciption: prescriptionData }) : null);
-      
-      generateAndUploadPDF(true); // Upload PDF and send WhatsApp
+        // 1. Upload new photos (now compressed)
+        const newPhotoData = await uploadNewPhotos();
+        const finalPhotoList = [...existingPhotos, ...newPhotoData];
+
+        // 2. Prepare Prescription Data (Photos ONLY)
+        const prescriptionData = {
+            photos: finalPhotoList, 
+            createdAt: new Date().toISOString(),
+            // Retain placeholder text or old data for PDF formatting purposes
+            symptoms: selectedAppointment?.presciption?.symptoms || "Prescription uploaded as photo.",
+            overallInstruction: selectedAppointment?.presciption?.overallInstruction || "View attached photos for details.",
+            medicines: selectedAppointment?.presciption?.medicines || [],
+        };
+
+        // 3. Update Firebase
+        const appointmentRef = ref(
+            db,
+            `appointments/${selectedAppointment.uid}/${selectedAppointment.appointmentId}`
+        );
+        await update(appointmentRef, { presciption: prescriptionData });
+        
+        toast.success("Prescription photos saved successfully! Starting PDF download...", { id: saveToastId });
+        setPrescriptionSaved(true);
+        
+        // Update local state for immediate re-render and PDF generation
+        const updatedAppointment = { ...selectedAppointment, presciption: prescriptionData };
+        setSelectedAppointment(updatedAppointment);
+        setNewPhotos([]); 
+        setExistingPhotos(finalPhotoList); 
+        
+        // 4. Generate and Download PDF
+        await generateAndDownloadPDF(updatedAppointment); 
+
     } catch (error) {
-      console.error("Error saving prescription:", error);
-      toast.error("Error saving prescription.");
+        console.error("Error saving prescription:", error);
+        toast.error(`Error saving prescription: ${error.message}`, { id: saveToastId });
     }
   };
 
-  // --- PDF Generation and WhatsApp ---
-  const generatePDFBlob = useCallback(async (isHistory = false) => {
-    if (!selectedAppointment) return null;
+  // --- PDF Generation and Download (SIMPLIFIED) ---
+  
+  const generatePDFBlob = useCallback(async (appointment) => {
+    if (!appointment) return null;
     
-    // Use the prescription data from the current state if not viewing history
-    const dataToUse = isHistory ? selectedAppointment.presciption : { 
-        symptoms, 
-        medicines, 
-        overallInstruction 
-    };
-    
-    if (!frontRef.current || !prescriptionRef.current || !dataToUse) return null;
+    const dataToUse = appointment.presciption || {};
+    const photosToInclude = dataToUse.photos || [];
+
+    if (!frontRef.current || !prescriptionRef.current) return null;
 
     const pdf = new jsPDF("p", "mm", "a4");
     const pdfWidth = pdf.internal.pageSize.getWidth();
-
-    // Page 1: Front Page
+    const margin = 10;
+    
+    // --- Page 1: Front Page ---
     const canvasFront = await html2canvas(frontRef.current, { scale: 1.5 });
     const pdfHeightFront = (canvasFront.height * pdfWidth) / canvasFront.width;
     pdf.addImage(
@@ -506,70 +346,34 @@ const DoctorPrescription = () => {
       pdfHeightFront
     );
 
-    // Page 2: Prescription Details
+    // --- Page 2: Patient Info & Photo Index ---
     pdf.addPage();
-    // Temporarily update prescriptionRef's content for accurate rendering
     const originalContent = prescriptionRef.current.innerHTML;
-
-    // Helper to format medicine time
-    const formatTime = (times) => {
-      if (!times) return '';
-      const t = times.morning ? 'Morning ' : '';
-      const e = times.evening ? 'Evening ' : '';
-      const n = times.night ? 'Night' : '';
-      return (t + e + n).trim().replace(/ /g, ', ');
-    };
-
-    const currentMedicines = dataToUse.medicines || [];
-
-    const medicinesHtml = currentMedicines.length > 0 ? `
-        <div style="margin-top: 5mm;">
-            <div style="display: flex; padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold; font-size: 11pt;">
-                <div style="flex: 3;">Medicine Name</div>
-                <div style="flex: 1; text-align: center;">Days</div>
-                <div style="flex: 2; text-align: center;">Time</div>
-                <div style="flex: 4;">Instruction</div>
-            </div>
-            ${currentMedicines.map((medicine, index) => `
-                <div key=${index} style="display: flex; padding: 8px 0; border-bottom: 1px solid #f5f5f5; font-size: 10pt;">
-                    <div style="flex: 3;">${medicine.name}</div>
-                    <div style="flex: 1; text-align: center;">${medicine.consumptionDays}</div>
-                    <div style="flex: 2; text-align: center;">${formatTime(medicine.times)}</div>
-                    <div style="flex: 4; white-space: pre-wrap; word-break: break-word;">${medicine.instruction}</div>
-                </div>
-            `).join('')}
-        </div>
-    ` : `<p style="font-size: 11pt;">No medicines prescribed.</p>`;
 
     prescriptionRef.current.innerHTML = `
       <div style="text-align: center; margin-bottom: 10mm;"></div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 10mm; font-size: 12pt;">
           <div style="width: 45%;">
-              <p style="margin: 4px 0;"><strong>Name:</strong> ${selectedAppointment.name}</p>
-              <p style="margin: 4px 0;"><strong>Phone:</strong> ${selectedAppointment.phone}</p>
+              <p style="margin: 4px 0;"><strong>Patient:</strong> ${appointment.name}</p>
+              <p style="margin: 4px 0;"><strong>Phone:</strong> ${appointment.phone}</p>
           </div>
           <div style="width: 45%; text-align: right;">
-              <p style="margin: 4px 0;"><strong>Doctor:</strong> ${selectedAppointment.doctor}</p>
-              <p style="margin: 4px 0;"><strong>Treatment:</strong> ${selectedAppointment.treatment}</p>
-              <p style="margin: 4px 0;"><strong>Subcategory:</strong> ${selectedAppointment.subCategory}</p>
+              <p style="margin: 4px 0;"><strong>Doctor:</strong> ${appointment.doctor}</p>
+              <p style="margin: 4px 0;"><strong>Date:</strong> ${appointment.appointmentDate}</p>
           </div>
       </div>
-      <hr style="border: none; border-bottom: 1px solid #ccc; margin-bottom: 10mm;" />
-      <div style="margin-bottom: 10mm;">
-          <h3 style="font-size: 14pt; margin-bottom: 4mm;">Prescription Details</h3>
-          <p style="font-size: 12pt; margin: 4px 0;"><strong>Symptoms/Disease:</strong> ${dataToUse.symptoms}</p>
-          ${medicinesHtml}
-      </div>
-      <div style="margin-bottom: 10mm;">
-          <h3 style="font-size: 14pt; margin-bottom: 4mm;">Overall Instructions</h3>
-          <p style="font-size: 12pt;">${dataToUse.overallInstruction}</p>
-      </div>
-      <hr style="border: none; border-bottom: 1px solid #ccc; margin-bottom: 5mm;" />
-      <div style="text-align: center; font-size: 10pt;">
-          <p>Report generated on: ${new Date().toLocaleString()}</p>
+      <hr style="border: none; border-bottom: 1px solid #ccc; margin-bottom: 15mm;" />
+      <h3 style="font-size: 18pt; text-align: center; margin-bottom: 5mm; color: #007bff;">PRESCRIPTION ATTACHMENT</h3>
+      <p style="font-size: 14pt; text-align: center; color: #555;">
+        This document serves as the cover page for the official prescription and reports uploaded by the doctor.
+      </p>
+      <p style="font-size: 14pt; text-align: center; margin-top: 15mm; color: #dc3545;">
+        ${photosToInclude.length > 0 ? `Total ${photosToInclude.length} Photo(s) Attached.` : `No Prescription Photo Attached.`}
+      </p>
+      <div style="position: absolute; bottom: 20mm; width: 100%; text-align: center; font-size: 10pt;">
+          Report generated on: ${new Date().toLocaleString()}
       </div>
     `;
-
 
     const canvasPrescription = await html2canvas(prescriptionRef.current, { scale: 1.5 });
     const pdfHeightPrescription = (canvasPrescription.height * pdfWidth) / canvasPrescription.width;
@@ -581,72 +385,80 @@ const DoctorPrescription = () => {
       pdfWidth,
       pdfHeightPrescription
     );
+    
+    // --- Subsequent Pages: Photos ---
+    if (photosToInclude.length > 0) {
+        let yPos = margin;
+        const imgWidth = pdfWidth - 2 * margin; // Max width of A4
+        const photoMargin = 15;
+        
+        pdf.setFontSize(16);
 
-    // Restore original content (important)
+        for (const photo of photosToInclude) {
+            try {
+                const img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.crossOrigin = "anonymous";
+                    image.onload = () => resolve(image);
+                    image.onerror = (e) => reject(new Error(`Image load failed: ${e.target.src}`));
+                    image.src = photo.url;
+                });
+
+                const ratio = img.width / img.height;
+                let finalWidth = imgWidth;
+                let finalHeight = imgWidth / ratio;
+                
+                // Scale down if image height is too large for one page
+                if (finalHeight > pdf.internal.pageSize.getHeight() - photoMargin * 2) {
+                     finalHeight = pdf.internal.pageSize.getHeight() - photoMargin * 2;
+                     finalWidth = finalHeight * ratio;
+                }
+                
+                // If the height is too much for the remaining space, start a new page
+                if (yPos + finalHeight + photoMargin > pdf.internal.pageSize.getHeight()) {
+                    pdf.addPage();
+                    yPos = margin;
+                }
+                
+                pdf.text(`Attached Photo ${photosToInclude.indexOf(photo) + 1}`, margin, yPos);
+                yPos += 5; // Space after title
+                
+                pdf.addImage(img, 'JPEG', margin, yPos, finalWidth, finalHeight);
+                yPos += finalHeight + photoMargin;
+            } catch (e) {
+                console.error("Error loading photo for PDF:", e);
+                // Fallback text if image fails to load
+                if (yPos + 10 > pdf.internal.pageSize.getHeight()) { pdf.addPage(); yPos = margin; }
+                pdf.text(`Error loading image ${photosToInclude.indexOf(photo) + 1}`, margin, yPos);
+                yPos += 15;
+            }
+        }
+    }
+
+    // Restore original content
     prescriptionRef.current.innerHTML = originalContent;
 
     return pdf.output("blob");
-  }, [selectedAppointment, symptoms, medicines, overallInstruction]);
+  }, []);
 
-  const downloadPrescriptionReport = async () => {
-    const pdfBlob = await generatePDFBlob();
+  const generateAndDownloadPDF = async (appointment = selectedAppointment) => {
+    if (!appointment) { toast.error("No appointment selected to generate PDF."); return; }
+    
+    const pdfBlob = await generatePDFBlob(appointment);
     if (!pdfBlob) { toast.error("Failed to generate PDF."); return; }
+    
     const blobURL = URL.createObjectURL(pdfBlob);
     const link = document.createElement("a");
     link.href = blobURL;
-    link.download = `Prescription-${selectedAppointment?.name}-${selectedAppointment?.appointmentId}.pdf`;
+    link.download = `Prescription-${appointment?.name}-${appointment?.appointmentId}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(blobURL);
     toast.success("PDF downloaded successfully!");
   };
-
-  const uploadPDFAndSendWhatsApp = async () => {
-    if (!selectedAppointment) return;
-    const pdfBlob = await generatePDFBlob();
-    if (!pdfBlob) { toast.error("Failed to generate PDF for WhatsApp."); return; }
-
-    const waToastId = toast.loading("Uploading PDF and sending WhatsApp...", { id: 'whatsapp-send' });
-    try {
-      const pdfStorageRef = storageRef(
-        storage,
-        `prescriptions/${selectedAppointment.uid}/${selectedAppointment.appointmentId}.pdf`
-      );
-      await uploadBytes(pdfStorageRef, pdfBlob);
-      const downloadURL = await getDownloadURL(pdfStorageRef);
-      const payload = {
-        token: "99583991572",
-        number: `91${selectedAppointment.phone}`,
-        imageUrl: downloadURL,
-        caption:
-          `Dear ${selectedAppointment.name}, your prescription for the appointment on ${selectedAppointment.appointmentDate} has been generated. Please find the attachment.`,
-      };
-      const response = await fetch("https://wa.medblisss.com/send-image-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) throw new Error("WhatsApp API failed.");
-
-      toast.success("Prescription sent to the user via WhatsApp!", { id: waToastId });
-    } catch (error) {
-      console.error("Error uploading or sending PDF via WhatsApp:", error);
-      toast.error("Error sending prescription via WhatsApp.", { id: waToastId });
-    }
-  };
-
-  // Combined function for PDF actions
-  const generateAndUploadPDF = async (uploadAndSend = true) => {
-    if (uploadAndSend) {
-      await uploadPDFAndSendWhatsApp();
-    } else {
-      await downloadPrescriptionReport();
-    }
-  };
-
-  // --- Modal Styles (Unchanged) ---
+  
+  // --- START: MODAL STYLES (RESTORED) ---
   const modalOverlayStyle = {
     position: "fixed",
     top: 0,
@@ -665,7 +477,7 @@ const DoctorPrescription = () => {
     padding: "20px",
     borderRadius: "8px",
     width: "95%",
-    maxWidth: "900px",
+    maxWidth: "600px", // Reduced width for simpler modal
     maxHeight: "95%",
     overflowY: "auto",
     position: "relative",
@@ -680,6 +492,8 @@ const DoctorPrescription = () => {
     background: "transparent",
     fontSize: "1.5rem",
   };
+  // --- END: MODAL STYLES (RESTORED) ---
+
 
   return (
     <div className="container my-4">
@@ -687,6 +501,7 @@ const DoctorPrescription = () => {
         <FaPrescriptionBottleAlt className="me-2 text-info" />
         Patient Appointments
       </h1>
+      
       {/* Filter Controls */}
       <div className="row mb-3 align-items-center">
         <div className="col-md-4">
@@ -718,13 +533,17 @@ const DoctorPrescription = () => {
         </div>
       </div>
 
+
       {/* Appointments List */}
       <div className="row">
         {filteredAppointments.length > 0 ? (
           filteredAppointments.map((appointment, idx) => {
             const phoneHistory = allAppointments
-              .filter((a) => a.phone === appointment.phone && a.presciption)
+              .filter((a) => a.phone === appointment.phone && a.presciption && a.presciption.photos && a.presciption.photos.length > 0)
               .sort((a, b) => new Date(b.presciption.createdAt) - new Date(a.presciption.createdAt));
+            
+            const hasPrescriptionPhotos = appointment.presciption && appointment.presciption.photos && appointment.presciption.photos.length > 0;
+            
             return (
               <div className="col-md-6 mb-3" key={idx}>
                 <div className="card shadow-sm border-primary h-100">
@@ -742,6 +561,7 @@ const DoctorPrescription = () => {
                       <strong>Phone:</strong> {appointment.phone}
                     </p>
                     <div className="mt-3">
+                      {/* Show History Button */}
                       {phoneHistory.length > 0 && (
                         <button
                           className="btn btn-secondary btn-sm me-2"
@@ -750,10 +570,11 @@ const DoctorPrescription = () => {
                             setShowHistoryModal(true);
                           }}
                         >
-                          <FaHistory className="me-1"/> See Previous History
+                          <FaHistory className="me-1"/> History ({phoneHistory.length})
                         </button>
                       )}
-                      {appointment.presciption ? (
+                      
+                      {hasPrescriptionPhotos ? (
                         <>
                           <button
                             className="btn btn-info me-2 btn-sm"
@@ -762,7 +583,7 @@ const DoctorPrescription = () => {
                               handleDownloadExistingPrescription(appointment);
                             }}
                           >
-                            <FaMicrophone className="me-1"/> Download
+                            <FaDownload className="me-1"/> Download
                           </button>
                           <button
                             className="btn btn-warning btn-sm"
@@ -771,7 +592,7 @@ const DoctorPrescription = () => {
                               handleSelectAppointmentForUpdate(appointment);
                             }}
                           >
-                            Update Prescription
+                            Update Photos
                           </button>
                         </>
                       ) : (
@@ -782,7 +603,7 @@ const DoctorPrescription = () => {
                             handleSelectAppointmentForAdd(appointment);
                           }}
                         >
-                          Add Prescription
+                          Upload Prescription
                         </button>
                       )}
                     </div>
@@ -800,7 +621,7 @@ const DoctorPrescription = () => {
         )}
       </div>
 
-      {/* --- Prescription Modal --- */}
+      {/* --- Prescription Modal (Simplified) --- */}
       {isPrescriptionModalOpen && selectedAppointment && (
         <div style={modalOverlayStyle}>
           <div style={modalContentStyle}>
@@ -808,224 +629,96 @@ const DoctorPrescription = () => {
               <FaTimes />
             </button>
             <h4 className="mb-4 text-success">
-              Prescription for {selectedAppointment.name} (Phone: {selectedAppointment.phone})
+              <FaCamera className="me-2" /> Upload Prescription Photo for {selectedAppointment.name}
             </h4>
-
-            {/* --- Voice Control UI --- */}
-            <div className="mb-4 p-3 border rounded" style={{ backgroundColor: '#f0e6ff' }}>
-              <button
-                type="button"
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isProcessingAudio}
-                className={`w-100 btn text-lg d-flex align-items-center justify-content-center gap-2 ${isProcessingAudio ? 'btn-warning' : isRecording ? 'btn-danger' : 'btn-purple'}`}
-                style={{ backgroundColor: isRecording ? '#dc3545' : '#6f42c1', color: 'white' }}
-              >
-                {isProcessingAudio ? (
-                  <><FaSpinner className="me-2 animate-spin" /> Analyzing Voice Dictation...</>
-                ) : isRecording ? (
-                  <><FaStop className="me-2 animate-pulse" /> Stop Recording & Process</>
-                ) : (
-                  <><FaMicrophone className="me-2" /> Dictate Prescription (AI Voice Input)</>
-                )}
-              </button>
-              {isProcessingAudio && (
-                <p className="text-center mt-2 text-sm text-muted">
-                  AI is structuring the prescription. This will overwrite all fields below.
-                </p>
-              )}
-            </div>
-            {/* --- END Voice Control UI --- */}
-
+            
             <form onSubmit={handleSubmitPrescription}>
-              <div className="mb-3">
-                <label className="form-label">
-                  <strong>1. Symptoms/Disease:</strong>
-                </label>
-                <textarea
-                  className="form-control"
-                  value={symptoms}
-                  onChange={(e) => setSymptoms(e.target.value)}
-                  rows={3}
-                  placeholder="Enter symptoms or dictate to fill automatically"
-                  disabled={isProcessingAudio}
-                ></textarea>
-              </div>
-
-              <div className="mb-3">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={toggleMedicineDetails}
-                  disabled={isProcessingAudio}
-                >
-                  <FaPlusCircle className="me-2" />
-                  {showMedicineDetails
-                    ? "Hide Medicine Details"
-                    : "Add Medicine Details"}
-                </button>
-              </div>
-
-              {showMedicineDetails && (
-                <>
-                  {medicines.map((medicine, index) => (
-                    <div key={index} className="card mb-3 border-secondary">
-                      <div className="card-body">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <h5 className="card-title">
-                            Medicine {index + 1}
-                          </h5>
-                          {(medicines.length > 0 || index > 0) && (
-                            <button
-                              type="button"
-                              className="btn btn-danger btn-sm"
-                              onClick={() => handleRemoveMedicine(index)}
-                              disabled={isProcessingAudio}
-                            >
-                              <FaTrash className="me-1" /> Remove
-                            </button>
-                          )}
-                        </div>
-                        {/* Medicine Name with Autocomplete */}
-                        <div className="mb-2" style={{ position: "relative" }}>
-                          <label className="form-label">
-                            Medicine Name:
-                          </label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={medicine.name}
-                            onChange={(e) =>
-                              handleMedicineChange(index, "name", e.target.value)
-                            }
-                            placeholder="Enter medicine name or select from dropdown"
-                            disabled={isProcessingAudio}
-                          />
-                          {/* Autocomplete Dropdown (Manual Input Only) */}
-                          {medicine.name && !isProcessingAudio && (
-                            <ul
-                              style={{
-                                position: "absolute",
-                                top: "100%",
-                                left: 0,
-                                right: 0,
-                                background: "#fff",
-                                border: "1px solid #ccc",
-                                zIndex: 10,
-                                listStyle: "none",
-                                margin: 0,
-                                padding: 0,
-                                boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-                                maxHeight: '200px',
-                                overflowY: 'auto'
-                              }}
-                            >
-                              {allMedicineNames
-                                .filter((sug) =>
-                                  sug.toLowerCase().startsWith(medicine.name.toLowerCase())
-                                )
-                                .map((suggestion, idx) => (
-                                  <li
-                                    key={idx}
-                                    style={{ padding: "8px", cursor: "pointer", borderBottom: '1px solid #eee' }}
-                                    onClick={() => handleSelectSuggestion(index, suggestion)}
-                                  >
-                                    {suggestion}
-                                  </li>
+                
+                {/* --- Photo Upload Section --- */}
+                <div className="mb-4 p-3 border rounded">
+                    <p className="mb-3 text-muted">
+                        Use the button below to upload photos of the physical prescription or reports. 
+                    </p>
+                    
+                    {/* File Input (Hidden) - CAPTURE ENABLED */}
+                    <input
+                        type="file"
+                        ref={photoInputRef}
+                        onChange={handlePhotoUpload}
+                        multiple
+                        accept="image/*"
+                        capture="environment" 
+                        style={{ display: 'none' }}
+                    />
+                    
+                    {/* Trigger Button */}
+                    <button
+                        type="button"
+                        className="btn btn-outline-dark w-100 mb-3"
+                        onClick={() => photoInputRef.current && photoInputRef.current.click()}
+                    >
+                        <FaFileUpload className="me-2" /> Select or Capture Photo(s)
+                    </button>
+                    
+                    {/* Photo Previews */}
+                    {(existingPhotos.length > 0 || newPhotos.length > 0) && (
+                        <div>
+                            <h5>Current Photos:</h5>
+                            <div className="d-flex flex-wrap gap-2 mt-3">
+                                {/* Existing Photos */}
+                                {existingPhotos.map((photo, index) => (
+                                    <div key={photo.storagePath} className="position-relative border rounded p-1" style={{ width: '100px', height: '100px' }}>
+                                        <img 
+                                            src={photo.url} 
+                                            alt={`Existing Photo ${index + 1}`} 
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                            onClick={() => setFullScreenPhoto(photo.url)}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0"
+                                            style={{ width: '20px', height: '20px', lineHeight: '20px', fontSize: '10px' }}
+                                            onClick={() => handleRemoveExistingPhoto(photo.storagePath)}
+                                        >
+                                            &times;
+                                        </button>
+                                    </div>
                                 ))}
-                            </ul>
-                          )}
+                                {/* New Photos */}
+                                {newPhotos.map(photo => (
+                                    <div key={photo.id} className="position-relative border rounded p-1" style={{ width: '100px', height: '100px' }}>
+                                        <img 
+                                            src={photo.preview} 
+                                            alt="New Upload Preview" 
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'pointer' }}
+                                            onClick={() => setFullScreenPhoto(photo.preview)}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0"
+                                            style={{ width: '20px', height: '20px', lineHeight: '20px', fontSize: '10px' }}
+                                            onClick={() => handleRemovePhoto(photo.id)}
+                                        >
+                                            &times;
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        {/* Other Medicine Fields */}
-                        <div className="mb-2">
-                          <label className="form-label">
-                            Consumption Days:
-                          </label>
-                          <input
-                            type="number"
-                            className="form-control"
-                            value={medicine.consumptionDays}
-                            onChange={(e) =>
-                              handleMedicineChange(index, "consumptionDays", e.target.value)
-                            }
-                            placeholder="e.g., 7"
-                            disabled={isProcessingAudio}
-                          />
-                        </div>
-                        <div className="mb-2">
-                          <label className="form-label">Time:</label>
-                          <div>
-                            {['morning', 'evening', 'night'].map(time => (
-                              <div className="form-check form-check-inline" key={time}>
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  checked={medicine.times[time]}
-                                  onChange={() => handleTimeToggle(index, time)}
-                                  id={`${time}-${index}`}
-                                  disabled={isProcessingAudio}
-                                />
-                                <label className="form-check-label" htmlFor={`${time}-${index}`}>
-                                  {time.charAt(0).toUpperCase() + time.slice(1)}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="mb-2">
-                          <label className="form-label">
-                            Medicine Instruction (Optional):
-                          </label>
-                          <textarea
-                            className="form-control"
-                            value={medicine.instruction}
-                            onChange={(e) => handleMedicineChange(index, "instruction", e.target.value)}
-                            rows={2}
-                            placeholder="Additional instruction for this medicine"
-                            disabled={isProcessingAudio}
-                          ></textarea>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="btn btn-outline-primary mb-3"
-                    onClick={addMedicine}
-                    disabled={isProcessingAudio}
-                  >
-                    <FaPlusCircle className="me-2" />
-                    Add More Medicine
-                  </button>
-                </>
-              )}
+                    )}
+                    {newPhotos.length > 0 && (
+                        <p className="text-warning text-sm mt-2">
+                            * {newPhotos.length} new photo(s) pending save (will be compressed upon saving).
+                        </p>
+                    )}
+                </div>
+                {/* --- End Photo Upload Section --- */}
 
-              <div className="mb-3">
-                <label className="form-label">
-                  <strong>2. Overall Instructions:</strong>
-                </label>
-                <textarea
-                  className="form-control"
-                  value={overallInstruction}
-                  onChange={(e) => setOverallInstruction(e.target.value)}
-                  rows={3}
-                  placeholder="Any additional instructions or follow-up details..."
-                  disabled={isProcessingAudio}
-                ></textarea>
-              </div>
-
-              <div className="d-flex justify-content-between pt-3 border-top">
-                <button type="submit" className="btn btn-success" disabled={isProcessingAudio}>
-                  Save & Send Prescription
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-info"
-                  onClick={downloadPrescriptionReport}
-                  disabled={!selectedAppointment?.presciption || isProcessingAudio}
-                >
-                  <FaMicrophone className="me-1"/> Download PDF
-                </button>
-              </div>
+                <div className="d-flex justify-content-center pt-3 border-top">
+                    <button type="submit" className="btn btn-success" disabled={newPhotos.length === 0 && existingPhotos.length === 0}>
+                        Save Photos & Download PDF
+                    </button>
+                </div>
             </form>
           </div>
         </div>
@@ -1071,11 +764,10 @@ const DoctorPrescription = () => {
               fontFamily: "Arial, sans-serif",
             }}
           >
-            {/* Content is dynamically generated in generatePDFBlob to use current state */}
+            {/* Content is dynamically generated in generatePDFBlob */}
           </div>
         </>
       )}
-
 
       {/* Previous History Modal */}
       {showHistoryModal && (
@@ -1085,9 +777,9 @@ const DoctorPrescription = () => {
               style={closeButtonStyle}
               onClick={() => setShowHistoryModal(false)}
             >
-              &times;
+              <FaTimes />
             </button>
-            <h4>Prescription History</h4>
+            <h4>Prescription History for {historyModalItems[0]?.name}</h4>
             {historyModalItems.map((item, index) => (
               <div
                 key={index}
@@ -1099,53 +791,59 @@ const DoctorPrescription = () => {
                 }}
               >
                 <p>
-                  <strong>Appointment Date:</strong> {item.appointmentDate}
+                  <strong>Appointment Date:</strong> {item.appointmentDate} (Created: {new Date(item.presciption?.createdAt).toLocaleDateString()})
                 </p>
-                <p>
-                  <strong>Symptoms/Disease:</strong> {item.presciption?.symptoms}
-                </p>
-                <p>
-                  <strong>Overall Instructions:</strong> {item.presciption?.overallInstruction}
-                </p>
-                {item.presciption?.medicines &&
-                  item.presciption.medicines.length > 0 && (
+                {/* History Photo Display (Primary Content) */}
+                {item.presciption?.photos && item.presciption.photos.length > 0 && (
                     <div>
-                      <h5>Medicines:</h5>
-                      <table className="table table-sm">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th>Days</th>
-                            <th>Time</th>
-                            <th>Instruction</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {item.presciption.medicines.map((med, i) => (
-                            <tr key={i}>
-                              <td>{med.name}</td>
-                              <td>{med.consumptionDays}</td>
-                              <td>
-                                {(med.times?.morning ? "Morning " : "") +
-                                  (med.times?.evening ? "Evening " : "") +
-                                  (med.times?.night ? "Night" : "")}
-                              </td>
-                              <td
-                                style={{
-                                  whiteSpace: "pre-wrap",
-                                  wordBreak: "break-word",
-                                }}
-                              >
-                                {med.instruction}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                        <h5>Uploaded Photos ({item.presciption.photos.length}):</h5>
+                        <div className="d-flex flex-wrap gap-2">
+                            {item.presciption.photos.map((photo, i) => (
+                                <img
+                                    key={i}
+                                    src={photo.url}
+                                    alt={`History Photo ${i + 1}`}
+                                    style={{ width: '80px', height: '80px', objectFit: 'cover', border: '1px solid #eee', cursor: 'pointer' }}
+                                    onClick={() => setFullScreenPhoto(photo.url)}
+                                />
+                            ))}
+                        </div>
                     </div>
-                  )}
+                )}
+                {!item.presciption?.photos || item.presciption.photos.length === 0 && (
+                    <p className="text-muted">No photos attached for this appointment.</p>
+                )}
+                <hr className="my-2"/>
+                 <button
+                    className="btn btn-sm btn-outline-info"
+                    onClick={() => {
+                        handleSelectAppointmentForUpdate(item); 
+                        setShowHistoryModal(false);
+                    }}
+                >
+                    <FaArrowLeft className="me-1"/> Update Photos for this Appointment
+                </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Full Screen Photo Viewer Modal */}
+      {fullScreenPhoto && (
+        <div style={modalOverlayStyle}>
+          <div style={{...modalContentStyle, maxWidth: '90%', width: 'auto', padding: '0', backgroundColor: 'transparent'}}>
+            <button 
+                style={{...closeButtonStyle, color: 'white'}} 
+                onClick={(e) => {e.stopPropagation(); setFullScreenPhoto(null);}}
+            >
+                <FaTimes />
+            </button>
+            <img 
+                src={fullScreenPhoto} 
+                alt="Full Screen View" 
+                style={{ maxHeight: '95vh', maxWidth: '95vw', objectFit: 'contain' }}
+            />
           </div>
         </div>
       )}
