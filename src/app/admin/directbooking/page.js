@@ -207,10 +207,12 @@ export default function Staff() {
     };
 
     try {
+      // Step 1: Save appointment to Firebase
       const newAppointmentRef = push(ref(db, `appointments/test`));
       await set(newAppointmentRef, appointmentData);
       alert("Appointment booked successfully!");
 
+      // Step 2: Prepare WhatsApp message content
       let message = `Dear ${appointmentData.name},\n\nYour appointment has been confirmed. Please find the details below:\n• Treatment: ${appointmentData.treatment}\n• Service: ${appointmentData.subCategory}\n• Doctor: ${appointmentData.doctor}\n• Date: ${appointmentData.appointmentDate}\n• Time: ${appointmentData.appointmentTime}\n\nThank you for choosing our services. We look forward to serving you.`;
 
       if (appointmentData.message && appointmentData.message.trim() !== "") {
@@ -220,24 +222,42 @@ export default function Staff() {
         message += `\n• Email: ${appointmentData.email}`;
       }
 
-      const apiResponse = await fetch("https://a.infispark.in/send-text", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token: "99583991572",
-          number: "91" + appointmentData.phone,
-          message: message,
-        }),
-      });
+      // Step 3: Send WhatsApp message using the new API
+      const whatsappPayload = {
+        number: `91${appointmentData.phone}`, // Uses the phone number from the form
+        text: message, // Uses the message variable constructed above
+      };
 
-      if (!apiResponse.ok) {
-        throw new Error("API call failed");
+      try {
+        // This is the new fetch call with the apikey
+        const whatsappResponse = await fetch("https://evo.infispark.in/message/sendText/medzeal", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Make sure NEXT_PUBLIC_WHATSAPP_API_KEY is set in your .env.local file
+            "apikey": process.env.NEXT_PUBLIC_WHATSAPP_API_KEY || ""
+          },
+          body: JSON.stringify(whatsappPayload),
+        });
+        
+        const whatsappResult = await whatsappResponse.json();
+        if (whatsappResponse.ok) {
+          console.log("WhatsApp message sent successfully:", whatsappResult);
+        } else {
+          console.error("Failed to send WhatsApp message:", whatsappResult);
+          // Optional: You could alert the user that the WA message failed
+        }
+      } catch (whatsappError) {
+        // This catches errors from the WhatsApp API call only
+        console.error("Error sending WhatsApp message:", whatsappError);
       }
+
+      // Step 4: Reset the form (runs even if WA message fails)
       setUserDetails(initialUserDetails);
+
     } catch (error) {
-      console.error("Error during appointment booking:", error);
+      // This catch block now primarily handles errors from Firebase
+      console.error("Error during appointment booking (Firebase):", error);
       alert("Failed to book appointment. Please try again.");
     }
   };

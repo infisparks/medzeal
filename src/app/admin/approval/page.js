@@ -86,7 +86,9 @@ const Approval = () => {
   };
 
   // New function to send a professional WhatsApp message with review link and offer image
+  // New function to send a professional WhatsApp message (TEXT ONLY)
   const sendApprovalWhatsAppMessage = async (phone, name, appointmentDate, appointmentTime, doctor) => {
+    // This is the message text
     const message = `Hello ${name},
 
 Your appointment on ${appointmentDate} at ${appointmentTime} with Dr. ${doctor} has been Done.
@@ -101,26 +103,36 @@ Best regards,
 Team Medzeal
 `;
     
+    // This is the new payload for your 'sendText' API
     const payload = {
-      token: "99583991572",
       number: `91${phone}`,
-      imageUrl: "https://raw.githubusercontent.com/infisparks/images/refs/heads/main/feedback.png",
-      caption: message
+      text: message
     };
     
     try {
-      await fetch("https://a.infispark.in/send-image-url", {
+      // This is the new fetch call with the apikey
+      const response = await fetch("https://evo.infispark.in/message/sendText/medzeal", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // This header name 'apikey' matches your Postman screenshot
+          "apikey": process.env.NEXT_PUBLIC_WHATSAPP_API_KEY || ""
         },
         body: JSON.stringify(payload)
       });
+
+      const result = await response.json();
+      if (response.ok) {
+        console.log("Approval WhatsApp message sent successfully:", result);
+      } else {
+        console.error("Failed to send approval WhatsApp message:", result);
+      }
+
     } catch(error) {
       console.error("Error sending approval WhatsApp message:", error);
     }
   };
-
+  
   const handleApprove = async (id, uid, email, appointmentDate, appointmentTime, doctor, name, phone) => { 
     const appointmentRef = ref(db, `appointments/${uid}/${id}`); 
     const { 
