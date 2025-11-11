@@ -207,22 +207,33 @@ export default function UserAppointmentsList() {
 
         whatsappMessage += `We look forward to seeing you.\nThank you,\n*Medzeal Team*`;
 
+        // [START] UPDATED WHATSAPP API CALL
+        
+        // This is the new payload for your 'sendText' API
+        const payload = {
+            number: `91${selectedAppointment.phone}`,
+            text: whatsappMessage
+        };
+
         // Send the message via WhatsApp API
-        const apiResponse = await fetch("https://a.infispark.in/send-text", {
+        const apiResponse = await fetch("https://evo.infispark.in/message/sendText/medzeal", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                // Make sure NEXT_PUBLIC_WHATSAPP_API_KEY is set in your .env.local file
+                "apikey": process.env.NEXT_PUBLIC_WHATSAPP_API_KEY || ""
             },
-            body: JSON.stringify({
-                token: "99583991572",
-                number: "91" + selectedAppointment.phone,
-                message: whatsappMessage,
-            }),
+            body: JSON.stringify(payload),
         });
 
         if (!apiResponse.ok) {
-            throw new Error('Failed to send WhatsApp message.');
+            const errorResult = await apiResponse.json().catch(() => ({})); // Try to get error details
+            console.error("Failed to send WhatsApp message:", errorResult);
+            // Provide a more specific error
+            throw new Error(`Failed to send WhatsApp message. Status: ${apiResponse.status}`);
         }
+        
+        // [END] UPDATED WHATSAPP API CALL
 
         // Update Firebase with the new details and acknowledgment status
         const db = getDatabase(app);
@@ -240,7 +251,8 @@ export default function UserAppointmentsList() {
         setTimeout(handleModalClose, 2000);
     } catch (error) {
         console.error("Error sending acknowledgment:", error);
-        setMessage("Error: Serjil bhai plz login Medzeal Whatsapp");
+        // Show the specific error message
+        setMessage(`Error: ${error.message}. Please check API key or console.`);
     } finally {
         setIsSending(false);
     }
